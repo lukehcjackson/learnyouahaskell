@@ -367,6 +367,257 @@ returns True
 "there!" `isSuffixOf` "oh hey there!"
 returns True
 
+We have seen elem and notElem - they check if an element is or isn't inside a list
+
+partition takes a list and a predicate,
+and returns a pair of lists. 
+The first list in the result contains all the elements that satisfy the predicate
+and the second one contains all the elements that don't
+
+partition (`elem` ['A'..'Z']) "BOBsidneyMORGANeddy"
+returns ("BOBMORGAN","sidneyeddy")
+
+partition (>3) [1,3,5,6,3,2,1,0,3,7]
+returns ([5,6,7],[1,3,3,2,1,0,3])
+
+It is important to note how this differs from span and break
+span and break stop once they reach the first element that doesn't satisfy the predicate
+partition goes through the whole list and splits it up according to the predicate
+
+find takes a list and a predicate, and returns the first element that satisfies the predicate
+However, it returns that element wrapped in a Maybe value
+This is covered more in the next chapter, but for now:
+A Maybe value can either be Just something or Nothing
+Like how a list can be either an empty list, or a list with some elements, 
+a Maybe value can either be no elements or a single element
+If the type of a list of integers is [Int], then the type of maybe having an Int
+is Maybe Int
+
+find (>4) [1,2,3,4,5,6]
+returns Just 5
+
+find (>9) [1,2,3,4,5,6]
+returns Nothing
+
+Let's have a look at the type of find
+:t find
+returns find :: (a -> Bool) -> [a] -> Maybe a
+
+( (a -> Bool) is how the type of a predicate is defined)
+The result of find is of type Maybe a
+That's similar to having a type of [a], only a value of type Maybe can contain
+either no elements or one element, whereas a list can contain no elements, one element, or several elements
+
+Recall when we were looking at stock prices for when they first went over $1000
+We used head. But head isn't really safe - if the price never went over $1000,
+dropWhile would return the empty list and then taking head would throw an error
+However, if we rewrote it as
+
+find (\(val, y, m, d) -> val > 1000) stock
+
+we would be much safer. If our stock never went over $1000, we would get back
+a Nothing. But if there was a valid answer, we would get a Just.
+
+elemIndex is kind of like elem
+Except it doesn't return a bool, it returns the index of the element
+we're looking for. 
+If the element isn't in the list, it returns a Nothing
+
+4 `elemIndex` [1,2,3,4,5,6]
+returns Just 3
+
+10 `elemIndex` [1,2,3,4,5,6]
+returns Nothing
+
+elemIndices is like elemIndex, only it returns a list of indices,
+in the case that the element we are searching for appears multiple times. 
+Because we are now using a list to represent the indices, we don't need
+the Maybe type. If the element never appears we can just return []
+
+' ' `elemIndices` "Where are the spaces?"
+returns [5,9,13]
+
+findIndex is like find, but it maybe returns the index of the first element
+that satisfies the predicate
+findIndices returns a list of the indices of all elements that satisfy
+the predicate. 
+
+findIndex (==4) [5,4,2,1,6,4]
+returns Just 5
+
+findIndex (==7) [5,3,2,1,6,4]
+returns Nothing
+
+findIndices (`elem` ['A'..'Z']) "Where Are The Caps?"
+returns [0,6,10,14]
+
+We have already covered zip and zipWith
+We noted that they zip together two lists, either in a tuple or 
+with a binary function (a function which takes two parameters)
+What if we want to zip three lists? Or three lists with a function
+that takes three parameters?
+For that, we have zip3, zip4, ... , zipWith3, zipWith4, ...
+These variants go up to 7
+
+zipWith3 (\x y z -> x + y + z) [1,2,3] [4,5,2,2] [2,2,3]
+returns [7,8,9]
+
+zip4 [2,3,3] [2,2,2] [5,5,3] [2,2,2]
+returns [(2,2,5,2),(3,2,5,2),(3,2,3,2)]
+
+Just like with normal zipping, lists that are longer than the shortest list
+get cut down to size
+
+lines is a useful function when dealing with files, or input from somewhere
+It takes a string and returns every line of that string in a separate list
+
+lines "first line\nsecond line\nthird line"
+returns ["first line","second line","third line"]
+
+unlines is the inverse function of lines
+It takes a list of strings, and joins them together with \n's
+
+unlines ["first line", "second line", "third line"]
+returns "first line\nsecond line\nthird line\n"
+
+words and unwords are for splitting a line of text into words,
+or joining a list of words into a text
+
+words "hey these are the words in this sentence"
+returns ["hey","these","are","the","words","in","this","sentence"]
+
+words "hey these       are the words\nin this one"
+returns ["hey","these","are","the","words","in","this","one"]
+
+unwords ["hey","there","mate"]
+returns "hey there mate"
+
+We've already mentioned nub, which takes a list and weeds out duplicate elements,
+returning a list of unique elements
+
+nub [1,2,3,4,3,2,1,2,3,4,3,2,1]
+returns [1,2,3,4]
+
+nub "Lots of words and stuff"
+returns "Lots fwrdanu"
+
+delete takes an element and a list, and deletes the first occurance of that
+element in the list
+
+delete 'h' "hey there gang"
+returns "ey there gang"
+
+delete 'h' . delete 'h' $ "hey there gang"
+returns "ey tere gang"
+
+\\ is the list difference function.
+It acts like a set difference
+For every element in the right hand list, it removes a matching element in the left one
+
+[1..10] \\ [2,5,9]
+returns [1,3,4,6,7,8,10]
+
+"Im a big baby" \\ "big"
+returns "Im a  baby"
+
+Doing [1..10] \\ [2,5,9] is like doing
+delete 2 . delete 5 . delete 9 $ [1..10]
+
+union also acts like a function on sets
+It returns the union of two lists!
+It goes over every element in the second list, and appends it
+to the first one if it isn't already in yet.
+
+"hey man" `union` "man what's up"
+returns "hey manwt'sup"
+
+[1..7] `union` [5..10]
+returns [1,2,3,4,5,6,7,8,9,10]
+
+intersect works like set intersection
+It returns only the elements found in both lists
+
+[1..7] `intersect` [5..10]
+returns [5,6,7]
+
+insert takes an element and a list of elements that can be sorted,
+and inserts it into the last position where it's still <= the next element
+In other words, insert starts at the beginning of the list and
+keeps going until it finds an element that equal or greater than the element
+we want to insert, and inserts it just before. 
+
+insert 4 [3,5,1,2,8,2]
+returns [3,4,5,1,2,8,2]
+
+insert 4 [1,3,4,4,1]
+returns [1,3,4,4,1]
+in this case the 4 is inserted between the original 3 and 4
+
+If we use insert to insert into a sorted list,
+the result will remain sorted
+
+insert 4 [1,2,3,5,6,7]
+returns [1,2,3,4,5,6,7]
+
+The length, take, drop, splitAt, !! and replicate functions all take an Int
+as one of their parameters, or return an Int. 
+They could be more generic and usable if they instead took any type
+that's part of the Integral or Num typeclasses (depending on the function)
+This is for historical reasons, and fixing it could break a lot of existing code. 
+
+Data.List has their more generic equivalents, named
+genericLength, genericTake, genericDrop, genericSplitAt, genericIndex and genericReplicate
+
+For instance, length has a type signature of
+    length :: [a] -> Int
+If we try to get the average of a list of numbers by doing
+    let xs = [1..6] in sum xs / length xs
+we get a type error, because you can't use / with an Int. 
+genericLength, however, has a type signature of
+    genericLength :: (Num a) => [b] -> a
+Because a Num can act like a floating point number, getting the
+average like we tried to before works fine. 
+
+The nub, delete, union, intersect and group functions have generic counterparts
+called nubBy, deleteBy, unionBy, intersectBy, and groupBy. 
+The difference is that the first set of functions use == to test for equality. 
+The 'by' versions also take an equality function and use that to compare. 
+This means that, for instance, 'group' is the same as 'groupBy (==)'
+
+For instance, say we have a list that describes the value of a function for
+every second. We want to segment it into sublists, based on when the value was
+below zero and when it went above. If we just did a normal group, it would just
+group the equal adjacent values together. But what we want is to group them by
+whether they are negative or not. This is where groupBy comes in. 
+The equality function supplied to the 'by' functions should take two elements
+of the same type and return True if it considers them equal by it's standards
+
+let values = [-4.3, -2.4, -1.2, 0.4, 2.3, 5.9, 10.5, 29.1, 5.3, -2.4, -14.5, 2.9, 2.3]
+groupBy (\x y -> (x > 0) == (y > 0)) values
+returns [[-4.3, -2.4, -1.2],[0.4,2.3,5.9,10.5,29.1,5.3],[-2.4,-14.5],[2.9,2.3]]
+
+This lets us clearly see which regions are positive and which are negative. 
+The equality function supplied takes two elements, and returns True only if
+they are both negative or both positive. 
+This equality function could also have been written as
+    \x y  -> (x > 0) && (y > 0) || (x <= 0) && (y <= 0)
+An even clearer way to write equality functions for the 'by' functions is
+if you import the 'on' function from Data.Function 
+
+on is defined like this:
+on :: (b -> b -> c) -> (a -> b) -> a -> a -> c
+f `on` g = \x y -> f (g x) (g y)
+
+So by doing (==) `on` (>0) returns an equality function that looks like
+    \x y -> (x > 0) == (y > 0)
+'on' is used a lot with the 'by' functions, because with it, we can do:
+
+groupBy ((==) `on` (>0)) values
+returns returns [[-4.3, -2.4, -1.2],[0.4,2.3,5.9,10.5,29.1,5.3],[-2.4,-14.5],[2.9,2.3]]
+(with the same values)
+
+This is more readable
+It reads 'group this by equality on whether the elements are greater than zero'
 
 
 -}

@@ -1,4 +1,3 @@
-
 {-
 
 MODULES
@@ -619,5 +618,503 @@ returns returns [[-4.3, -2.4, -1.2],[0.4,2.3,5.9,10.5,29.1,5.3],[-2.4,-14.5],[2.
 This is more readable
 It reads 'group this by equality on whether the elements are greater than zero'
 
+#### Data.Char #####
+
+The Data.Char module export functions that deal with characters.
+It's also helpful when filtering and mapping over strings, because they are just lists of characters.
+
+Data.Char exports a bunch of predicates over characters. That is, functions that take a character and 
+tell us whether some assumption about it is true or false. For instance:
+
+isControl checks whether a character is a control character
+
+isSpace checks whether a character is a white-space character (spaces, tabs, newlines, ...)
+
+isLower checks whether a character is lowercase
+
+isUpper checks whether a character is uppercase
+
+isAlpha checks whether a character is a letter
+
+isAlphaNum checks whether a character is a letter or a number
+
+isPrint checks whether a character is printable. Control characters, for instance, are not printable. 
+
+isDigit checks whether a character is a digit
+
+isOctDigit checks whether a character is an octal digit
+
+isHexDigit checks whether a character is a hex digit
+
+isLetter checks whether a character is a letter
+
+isMark checks for unicode mark characters.
+these are characters that combine with preceding letters, to form letters with accents - e◌́ => é
+
+isNumber checks whether a character is numeric
+
+isPunctuation checks whether a character is punctuation
+
+isSymbol checks whether a character is a mathematical or currency symbol
+
+isSeparator checks for unicode spaces and separators
+
+isAscii checks whether a character falls into the first 128 characters of unicode (i.e. is ascii)
+
+isLatin1 checks whether a character falls into the first 256 characters of unicode
+
+isAsciiUpper checks whether a character is ASCII and is upper-case
+
+isAsciiLower checks whether a character is ASCII and is lower-case
+
+All of these predicates have a type signature of Char -> Bool. Most of the time we use this to filter out strings or something similar.
+For instance, say we are making a program that takes a username, which can only be comprised of alphanumeric characters. We can use the
+Data.List function 'all' in combination with the Data.Char predicates to determine if the username is alright:
+
+    all isAlphaNum "bobby123"
+    returns True
+
+    all isAlphaNum "hello hello hello!"
+    returns False
+
+We could also use isSpace to simulate the Data.List function 'words'
+
+words "hey guys its me"
+returns ["hey","guys","its","me"]
+
+groupBy ((==) `on` isSpace) "hey guys its me"
+returns ["hey", " ", "guys", " ", "its", " ", "me"]
+
+Well, it almost does what words does. It leaves us with the empty spaces. 
+We can filter these out:
+
+filter (not . any isSpace) . groupBy ((==) `on` isSpace) $ "hey guys its me"
+returns ["hey", "guys", "its", "me"]
+
+Data.Char also exports a datatype that's kind of like Ordering. 
+The Ordering type can have a value of LT, EQ or GT. It's sort of an enumeration. It describes a few possible results that can arise from comparing two elements. 
+The GeneralCategory type is also an enumeration. It presents us with a few possible categories that a character can fall into. 
+The main function for getting the general category of a character is generalCategory. It has a type of generalCategory :: Char -> GeneralCategory
+There are abouut 31 categories, here are a few:
+
+generalCategory ' '
+returns Space
+
+generalCategory 'A'
+returns UppercaseLetter
+
+generalCategory 'a'
+returns LowercaseLetter
+
+generalCategory '.'
+returns OtherPunctuation
+
+generalCategory '9'
+returns DecimalNumber
+
+map generalCategory " \t\nA9?|"
+returns [Space, Control, Control, UppercaseLetter, DecimalNumber, OtherPunctuation, MathSymbol]
+
+Since the GeneralCategory type is part of the Eq typeclass, we can also test for things like
+generalCategory c == Space
+
+toUpper converts a character to upper-case. Spaces, numbers, etc remain unchanged
+
+toLower converts a character to lower-case
+
+toTitle convers a character to title-case (which is normally the same as uppercase)
+
+digitToInt converts a character to an Int. This only works for characters in the ranges 0..9, a..f and A..F 
+
+map digitToInt "34538"
+returns [3,4,5,3,8]
+
+map digitToInt "FF85AB"
+returns [15,15,8,5,10,11]
+
+intToDigit is the inverse function of digitToInt. It takes an Int in the range of 0..15 and converts it to a lower-case character
+
+intToDigit 15
+returns 'f'
+
+intToDigit 5
+returns '5'
+
+The ord and chr functions convert characters to their corresponding numbers and vice versa
+
+ord 'a'
+returns 97
+
+chr 97
+returns 'a'
+
+map ord "abcdefgh"
+returns [97,98,99,100,101,102,103,104]
+
+The difference between the ord values of two characters is their distance between each other in the Unicode table. 
+
+The Caesar cipher is a method of encoding messages by shifting each character by a fixed number of positions in the alphabet. 
+We can create a sort of Caesar cipher of our own, only we won't contrict ourselves to the alphabet:
+
+encode :: Int -> String -> String
+encode shift msg = 
+    let ords = map ord msg
+        shifted = map (+ shift) ords
+    in map chr shifted
+
+We first convert the string to a list of numbers (map ord msg). Then, we add the shift amount to each number (map + shift ords)
+before converting the list of numbers back to characters (map chr shifted).
+You could also write the body of this function as map(chr . (+ shift) . ord) msg
+
+encode 3 "Heeey"
+returns "Khhh|"
+
+encode 4 "Heeey"
+returns "Liii}"
+
+Decoding a message is just shifting it back by the number of places it was shifted by in the first place
+
+decode :: Int -> String -> String
+decode shift msg = encode (negate shift) msg
+
+ghci> encode 3 "Im a little teapot"  
+returns "Lp#d#olwwoh#whdsrw"  
+ghci> decode 3 "Lp#d#olwwoh#whdsrw"  
+returns "Im a little teapot"  
+
+##### Data.Map #####
+
+Association lists (also called dictionaries) are lists that are used to store key-value pairs, where ordering does not matter. 
+For instance, we might use an association list to store phone numbers, where phone numbers might be the values and people's names would be the keys. 
+We don't care what order they're stored, we just want to get the right phone number for the right person. 
+
+The most obvious way to represent an association list in Haskell would be by having a list of pairs. 
+The first component in the pair would be the key, and the second component the value. 
+Here's an example:
+
+phoneBook =     
+    [("betty","555-2938")
+    ,("bonnie","452-2928")
+    ,("patsy","493-2928")
+    ]
+
+This is just a list of pairs of strings. 
+The most common task when dealing with association lists is looking up some value by key. Let's make a function that looks up a value given a key. 
+
+findKey :: (Eq k) => k -> [(k,v)] -> v
+findKey key xs = snd . head . filter (\(k,v) -> key == k) $ xs
+
+The function takes a key and a list, filters the list so only matching keys remain (filter (\(k,v) -> key == k) % xs),
+gets the first key-value that matches (head) and returns the value (snd - returns the second element i.e the value)
+What happens if the key we're looking for isn't in the association list?
+We would try to get the head of an empty list, which throws an error. 
+Let's use the Maybe datatype - if we don't find the key, we'll return a Nothing. If we do find it, we'll return Just ..., where ... is the value corresponding to the key
+
+findKey :: (Eq k) => k -> [(k,v)] -> Maybe v
+findKey key [] = Nothing
+findKey key ((k,v):xs) = if key == k
+                            then Just v
+                            else findKey key xs
+
+This is a textbook recursive function that operates on a list. The edge case, splitting a list into a head and a tail, recursive calls, they're all there.
+This is the classic fold pattern, so let's see how this could be implemented as a fold:
+
+findKey (Eq k) => k -> [(k,v)] -> Maybe v
+findKey key = foldr (\(k,v) acc -> if key == k then Just v else acc) Nothing
+
+findKey "penny" phoneBook
+returns Just "853-2492"
+
+findKey "wilma" phoneBook
+returns Nothing
+
+We have just implemented the 'lookup' function from Data.List
+If we want to find the corresponding value to a key, we have to traverse all the elements of the list until we find it. 
+The Data.Map module offers association lists that are must faster - because they are internally implemented with trees.
+It also provides a lot of utility functions. From now on, we'll say we are working with maps instead of association lists. 
+
+Because Data.Map exports functions that clash with Prelude and Data.List, we will do a qualified import:
+
+import qualified Data.Map as Map
+
+The fromList function takes an association list (in the form of a list) and returns a map with the same associations
+
+ghci> Map.fromList [("betty","555-2938"),("bonnie","452-2928"),("lucille","205-2928")]  
+returns fromList [("betty","555-2938"),("bonnie","452-2928"),("lucille","205-2928")] 
+
+If there are duplicate keys in the original association list, the duplicates are discarded. This is the type signature of fromList:]
+
+Map.fromList :: (Ord k) => [(k, v)] -> Map.Map k v
+
+It says that it takes a list of pairs of type k and v, and returns a map that maps from keys of type k to values of type v
+Notice that when we were doing association lists with normal lists, the keys only had to be equatable (their type belonging to the Eq typeclass)
+but now they have to be orderable. This is an essential constraint in the Data.Map module. The keys must be orderable so it can arrange them into a tree. 
+
+You should always use a Data.Map for key-value associations unless you have keys that aren't part of the Ord typeclass. 
+
+empty represents an empty map. It takes no arguments, it just returns an empty map. 
+
+Map.empty
+returns fromList []
+
+insert takes a key, a value and a map, and returns a new map that's just like the old one, only with the key and value inserted. 
+
+Map.insert 3 100 Map.empty
+returns fromList [(3,100)]
+
+Map.insert 5 600 (Map.insert 4 200 ( Map.insert 3 100  Map.empty))  
+returns fromList [(3,100),(4,200),(5,600)]  
+
+Map.insert 5 600 . Map.insert 4 200 . Map.insert 3 100 $ Map.empty  
+returns fromList [(3,100),(4,200),(5,600)]  
+
+We can implement our own fromList by using the empty map, insert, and a fold:
+
+fromList' :: (Ord k) => [(k,v)] -> Map.Map k v
+fromList' = foldr (\(k,v) acc -> Map.insert k v acc) Map.empty 
+
+We start off with an empty map, and we fold it up from the right, inserting the key value pairs into the accumulator as we go. 
+
+null checks if a map is empty
+
+Map.null Map.empty
+returns True
+
+Map.Null $ Map.fromList [(2,3),(5,5)]
+returns False
+
+size reports the size of a map
+
+Map.size Map.empty
+returns 0
+
+Map.size $ Map.fromList [(2,4),(3,3),(4,2),(5,4),(6,4)] 
+returns 5
+
+singleton takes a key and a value, and creates a map that has exactly one mapping
+
+Map.singleton 3 9
+returns fromList [(3,9)]
+
+Map.insert 5 9 $ Map.singleton 3 9
+returns fromList[(3,9), (5,9)]
+
+lookup works like the Data.List lookup, only it operates on maps. It returns Just something if it finds something for the key, and Nothing if it doesn't
+
+member takes a key and a map and reports whether the key is in the map or not
+
+Map.member 3 $ Map.fromList [(3,6),(4,3),(6,9)]
+returns True
+
+map and filter work much like their list equivalents
+
+Map.map (*100) $ Map.fromList [(1,1),(2,4),(3,9)]
+returns fromList [(1,100), (2,400), (3,900)]
+
+Map.filter isUpper $ Map.fromList [(1,'a'),(2,'A'),(3,'b'),(4,'B')]
+returns fromList [(2,'A'),(4,'B')]
+
+toList is the inverse of fromList
+
+Map.toList . Map.insert 9 2 $ Map.singleton 4 3
+returns [(4,3),(9,2)]
+
+keys and elems returns lists of keys and values respectively.
+keys is the equivalent of  map fst . Map.toList 
+elems is the equivalent of map snd . Map.toList
+
+fromListWith acts like fromList, only it doesn't discard duplicate keys, but instead uses a function supplied with it to decide what to do with them
+let's say someone can have multiple phone numbers, and we have an association list set up like this:
+
+    phoneBook =   
+        [("betty","555-2938")  
+        ,("betty","342-2492")  
+        ,("bonnie","452-2928")  
+        ,("patsy","493-2928")  
+        ,("patsy","943-2929")  
+        ,("patsy","827-9162")  
+        ,("lucille","205-2928")  
+        ,("wendy","939-8282")  
+        ,("penny","853-2492")  
+        ,("penny","555-2111")  
+        ]  
+
+If we just used fromList to put that into a map, we would lose a few numbers. So instead, we can do:
+
+phoneBookToMap :: (Ord k) => [(k, String)] -> Map.Map k String
+phoneBookToMap xs = Map.fromListWith (\number1 number2 -> number1 ++ ", " ++ number2) xs
+
+Now,
+Map.lookup "patsy" $ phoneBookToMap phoneBook  
+returns "827-9162, 943-2929, 493-2928"  
+
+If a duplicate key is found, the function we pass is used to combine the values of those keys into some other value. 
+We could also first make all the values in the association list singleton lists, and then use ++ to combine the numbers:
+
+phoneBookToMap :: (Ord k) => [(k,a)] -> Map.Map k [a]
+phoneBookToMap xs = Map.fromListWith (++) $ map (\(k,v) -> (k,[v])) xs
+
+Map.lookup "patsy" $ phoneBookToMap phoneBook  
+returns ["827-9162","943-2929","493-2928"]  
+
+Another use case is for when we are making a map from an association list with numbers:
+when a duplicate key is found, we want to biggest value for the key to be kept
+
+Map.fromListWith max [(2,3),(2,5),(2,100),(3,29),(3,22),(3,11)]
+returns fromList [(2,100),(3,29)]
+
+Or we could choose to add together values with the same keys
+
+Map.fromListWith (+) ....
+
+insertWith is to 'insert' what fromListWith is to 'fromList'. It inserts a key-value pair into a map, but if that map already contains the key, it uses the function passed with it to determine what to do. 
+
+Map.insertWith (+) 3 100 $ Map.fromList [(3,4),(5,103),(6,339)]
+returns fromList [(3,104),(5,103),(6,339)]
+
+Full list of Data.Map functions: https://hackage.haskell.org/package/containers-0.4.0.0/docs/Data-Map.html
+
+##### Data.Set #####
+
+The Data.Set module offers sets. All the elements in a set are unique. They're internally implemented with trees => they're ordered. 
+Checking for membership, insertion, deletion etc is much faster than doing the same thing with lists. 
+
+We do a qualified import because the names in Data.Set clash with a lot of Prelude and Data.List names. 
+
+import qualified Data.Set as Set
+
+Say we have two pieces of text. We want to find out which characters are used in both of them.
+
+    text1 = "I just had an anime dream. Anime... Reality... Are they so different?"  
+    text2 = "The old man left his garbage can out and now his trash is all over my lawn!"  
+
+The fromList functions works how you would expect. It takes a list and converts it to a set. 
+
+ghci> let set1 = Set.fromList text1  
+ghci> let set2 = Set.fromList text2  
+ghci> set1  
+fromList " .?AIRadefhijlmnorstuy"  
+ghci> set2  
+fromList " !Tabcdefghilmnorstuvwy"
+
+The items are ordered and each element in unique. 
+
+We can use the intersection function to see which elements they both share:
+
+Set.intersection set1 set2
+returns fromList " adefhilmnorstuy"
+
+We can use the difference function to see which letters are in the first but not the second set, and vice versa:
+
+Set.difference set1 set2
+returns fromList ".?AIRj"
+
+Set.difference set2 set1
+returns fromList "!Tbcgvw"
+
+We can see all the unique letters used in both sentences using union:
+
+Set.union set1 set2
+returns fromList " !.?AIRTabcdefghijlmnorstuvwy"
+
+The null, size, member, empty, singleton, insert and delete functions all work how you would expect:
+
+    ghci> Set.null Set.empty  
+    True  
+    ghci> Set.null $ Set.fromList [3,4,5,5,4,3]  
+    False  
+    ghci> Set.size $ Set.fromList [3,4,5,3,4,5]  
+    3  
+    ghci> Set.singleton 9  
+    fromList [9]  
+    ghci> Set.insert 4 $ Set.fromList [9,3,8,1]  
+    fromList [1,3,4,8,9]  
+    ghci> Set.insert 8 $ Set.fromList [5..10]  
+    fromList [5,6,7,8,9,10]  
+    ghci> Set.delete 4 $ Set.fromList [3,4,5,4,3,4,5]  
+    fromList [3,5]  
+
+We can also check for subsets and proper subsets.
+Set A is a subset of set B if B contains all the elements of A. 
+Set A is a proper subset of set B if B contains all the elements of A, and has more elements. 
+
+    ghci> Set.fromList [2,3,4] `Set.isSubsetOf` Set.fromList [1,2,3,4,5]  
+    True  
+    ghci> Set.fromList [1,2,3,4,5] `Set.isSubsetOf` Set.fromList [1,2,3,4,5]  
+    True  
+    ghci> Set.fromList [1,2,3,4,5] `Set.isProperSubsetOf` Set.fromList [1,2,3,4,5]  
+    False  
+    ghci> Set.fromList [2,3,4,8] `Set.isSubsetOf` Set.fromList [1,2,3,4,5]  
+    False 
+
+We can also map over sets and filter them:
+
+Set.filter odd $ Set.fromList [3,4,5,6,7,2,3,4]
+returns fromList [3,5,7]
+
+Set.map (+1) $ Set.fromList [3,4,5,6,7,2,3,4]
+returns fromList [3,4,5,6,7,8]
+
+Sets are often used to weed a list of duplicates from a list, by first making it into a set with fromList and then converting it back to a list with toList
+The Data.List function nub already does that, but weeding out duplicates for large lists is much faster if you cram them into a set and then convert them back to a list, rather than using nub
+But using nub only requires the type of the list's elements to be part of the Eq typeclass, whereas using sets requires them to be in Ord
+
+let setNub xs = Set.toList $ Set.fromList xs
+setNub "HEY WHATS CRACKALACKIN"
+returns " ACEHIKLNRSTWY"
+
+nub "HEY WHATS CRACKALACKIN"
+returns "HEY WATSCRKLIN"
+
+setNub is generally faster than nub on big lists, but nub preserves the ordering of the list's elements, whereas setNub does not. 
+
+##### MAKING OUR OWN MODULES #####
+
+How can we make our own modules?
+It is good practise to take functions and types that work towards a similar purpose and put them into a module.
+That way, you can easily reuse those functions in other programs by just importing your module. 
+
+Let's see how we can do this by creating a little module that provides some functions for calculating the volume and area of some geometric objects.
+We'll start by creating a file called Geometry.hs
+(this continues in that file, as well as some notes here)
+
+We say that a module exports functions. This means that when I import a module, I can only use the functions that it exports. 
+It can define other functions, which its functions call internally, but we can only see and use the ones that it exports. 
+
+To use our module, we just do
+
+    import Geometry
+
+Geometry.hs has to be in the same folder as the program that's import it, though. 
+
+Modules can also be given a hierarchical structure. Each module can have a number of sub-modules and they can have sub-modules of their own. 
+Let's section these functions off so that Geometry is a module that has three sub-modules, one for each type of object. 
+
+First, we make a folder called Geometry
+Inside, we place three files: Sphere.hs, Cuboid.hs and Cube.hs 
+
+First is Geometry.Sphere:
+Notice how we placed it in a folder called Geometry and then defined the module name as Geometry.Sphere 
+We did the same thing for Cuboid and Cube. 
+Also notice how, in all three sub-modules, we defined functions with the same names. 
+We can do this because they're separate modules. 
+
+We want to use functions from Geometry.Cuboid in Geometry.Cube, but because it exports functions with the same names as Geometry.Cube we have to do a qualified import. 
+
+Now, if we're in a file that's on the same folder level as the Geometry folder, we can do:
+    import Geometry.Sphere
+
+And then we can call area and volume and they'll give us the area and volume for a sphere. 
+If we want to juggle two or more of these modules, we have to do qualified imports because they export functions with the same names.
+So we just do something like:
+
+import qualified Geometry.Sphere as Sphere
+import qualified Geometry.Cuboid as Cuboid
+import qualified Geometry.Cube as Cube
+
+And then we can call Sphere.area, Cuboid.volume , ... and each will calculate the area/volume for their respective object. 
+
+The next time you find yourself writing a file that's really big and has a lot of functions, try and see which functions serve a common purpose and then try to put them in their own module. 
+You'll be able to just import the module the next time you're writing a program that requires some of the same functionality. 
 
 -}

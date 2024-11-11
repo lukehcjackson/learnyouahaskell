@@ -347,4 +347,274 @@ Giving a function a type of Vector t t t -> Vector t t t -> t would be wrong, be
 
 ##### DERIVED INSTANCES ##### 
 
+We have said that a typeclass is a sort of an interface that defines some behaviour.
+A type can be made an instance of a typeclass if it supports that behaviour.
+
+For instance, the Int type is an instance of the Eq typeclass because the Eq typeclass
+defines behaviour for stuff that can be equauated. And because integers can be equated,
+Int is part of the Eq typeclass. 
+
+The real usefulness comes with the functions that act as an interface for Eq, 
+namely == and /=. If a type is part of the Eq typeclass, we can use the == functions with
+values of that type. That's why expressions like 4 == 4 and "foo" /= "bar" typecheck. 
+
+Typeclasses are often confused with classes from other languages. In those languages,
+classes are a blueprint from which we create objects that contain state and do other actions. 
+Typeclasses are more like interfaces - we don't make data from typeclasses.
+Instead, we first make our data type, then we think about what it can act like. 
+If it can act like something that can be equated, we make it an instance of the Eq typeclass. 
+If it can act like something that can be ordered, we make it an instance of the Ord typeclass.
+
+In the next section, we will see how we can manually make our types instances of typeclasses
+by implementing the functions defined by the typeclasses. But for now, let's see how Haskell can
+automatically make our type an instance of any of the following typeclasses: Eq, Ord, Enum, Bounded, Show, Read. 
+Haskell can derive the behaviour of our types in these contexts if we use the 'deriving' keyword when making our data type. 
+
+Consider this data type:
+
+data Person = Person { firstName :: String
+                     , lastName :: String
+                     , age :: Int
+                     }
+
+Let's assume that no two people have the exact same first name, last name, and age. 
+Now, if we have records for two people, does it makes sense to see if they represent the same person? Sure! 
+We can try to equate them and see if they're equal or not. 
+That's why it would make sense for this type to be part of the Eq typeclass. 
+We'll derive the instance. 
+
+data Person = Person { firstName :: String
+                     , lastName :: String
+                     , age :: Int
+                     } deriving (Eq)
+
+When we derive the Eq instance for a type and then try to compare two values of that type with == or /=, 
+Haskell will see if the value constructors match (there's only one value constructor here) and then
+it will check if all the data contained inside matches by testing each pair of fields with ==. 
+There's only one catch though - the types of all the fields have to be part of the Eq typeclass. 
+Since both String and Int are, we're okay here. 
+
+ghci> let mikeD = Person {firstName = "Michael", lastName = "Diamond", age = 43}
+ghci> let adRock = Person {firstName = "Adam", lastName = "Horovitz", age = 41}
+ghci> let mca = Person {firstName = "Adam", lastName = "Yauch", age = 44}
+ghci> mca == adRock
+False
+ghci> mikeD == adRock
+False
+ghci> mikeD == mikeD
+True
+ghci> mikeD == Person {firstName = "Michael", lastName = "Diamond", age = 43}
+True
+
+Since Person is now in Eq, we can use it as the 'a' for all functions that have a 
+class constraint of 'Eq a' in their type signature, such as elem:
+
+let beastieBoys = [mca, adRock, mikeD]
+mikeD `elem` beastieBoys
+returns True
+
+The Show and Read typeclasses are for things that can be converted to or from strings, respectively. 
+Like with Eq, if a type's constructors have fields, their type has to be a part of Show or Read if we want
+to make our type an instance of them. Let's make our Person data type be a part of Show and Read as well. 
+
+data Person = Person { firstName :: String
+                     , lastName :: String
+                     , age :: Int
+                     } deriving (Eq, Show, Read)
+
+Now we can print a person our to the terminal: 
+
+ghci> let mikeD = Person {firstName = "Michael", lastName = "Diamond", age = 43}
+ghci> mikeD
+Person {firstName = "Michael", lastName = "Diamond", age = 43}
+ghci> "mikeD is: " ++ show mikeD
+"mikeD is: Person {firstName = \"Michael\", lastName = \"Diamond\", age = 43}"
+
+Had we tried to print a person on the terminal before making the Person data type part of Show,
+Haskell would have complained at us, claiming it doesn't know how to represent a person as a string. 
+Now that we've derived a Show instance for it, it does know how. 
+
+Read is pertty much the inverse typeclass of Show. Show is for converting values of our 'a' type
+to a String. Read if for converting Strings to values of our type. Remember though, when we use the
+read function, we have to use an explicit type annotation to tell Haskell which type we want to get
+as a result. If we don't make the type we want as a result explicit, Haskell doesn't know which type we want. 
+
+ghci> read "Person {firstName =\"Michael\", lastName =\"Diamond\", age = 43}" :: Person
+Person {firstName = "Michael", lastName = "Diamond", age = 43}
+
+If we use the result of our read later on, in a way that Haskell can infer that it should be read
+as a Person, we don't have to use type annotation. 
+
+ghci> read "Person {firstName =\"Michael\", lastName =\"Diamond\", age = 43}" == mikeD
+True
+
+We can also read parameterised types, but we have to fill in the type parameters. 
+We can't do read "Just 't'" :: Maybe a, but we can do read "Just 't'" :: Maybe Char 
+
+We can derive instances from the Ord typeclass, which is for types that have values that can be ordered. 
+If we compare two values of the same type that were made using different constructors, the value which was
+made with a constructor that's defined first is considered smaller. 
+
+For instance, consider the Bool type, which can have a value of either False or True. 
+For the purpose of seeing how it behaves when compared, we can think of it as being implemented like:
+
+data Bool = False | True deriving (Ord)
+
+Because the False value consructor is specified first, and the True value constructor is specified after it,
+we can consider True as greater than False. 
+
+True `compare` False
+returns GT
+
+True > False
+returns True
+
+True < False
+returns False
+
+In the 'Maybe a' data type, the Nothing value constructor is specified before the Just value constructor. 
+So a value of Nothing is always smaller than a value of Just something, even if that something is -99999999. 
+But if we compare two Just values, then it goes to compare what's inside them. 
+
+ghci> Nothing < Just 100
+True
+ghci> Nothing > Just (-49999)
+False
+ghci> Just 3 `compare` Just 2
+GT
+ghci> Just 100 > Just 50
+True
+
+But we can't do something like Just (*3) > Just (*2), because (*3) and (*2) are functions,
+which aren't instances of Ord. 
+
+We can easily use algebraic data types to make enumerations, and the Enum and Bounded typeclasses
+help us with that. Consider the following data type:
+
+data Day = Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday
+
+Because all the value constructors are nullary (take no parameters) we can make it part of the
+Enum typeclass. The Enum typeclass is for things that have predecessors and successors. 
+We can also make it a part of the Bounded typeclass, which is for things that have a lowest
+and highest possible value. 
+While we're at it, let's also make it an instance of all the other derivable typeclasses and see what we can do with it. 
+
+data Day = Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday
+           deriving (Eq, Ord, Show, Read, Bounded, Enum)
+
+Because it's part of the Show and Read typeclasses, we can convert values of this type
+to and from Strings:
+
+ghci> Wednesday
+Wednesday
+ghci> show Wednesday
+"Wednesday"
+ghci> read "Saturday" :: Day
+Saturday
+
+Because it's part of the Eq and Ord typeclasses, we can compare or equate days:
+
+ghci> Saturday == Sunday
+False
+ghci> Saturday == Saturday
+True
+ghci> Saturday > Friday
+True
+ghci> Monday `compare` Wednesday
+LT
+
+It's also part of Bounded, so we can get the lowest and highest day
+
+minBound :: Day
+returns Monday
+
+maxBound :: Day
+returns Sunday
+
+It's also an instance of Enum. We can get predecessors and successors of days,
+and we can make list ranges from them. 
+
+succ Monday
+returns Tuesday
+
+pred Saturday
+returns Friday
+
+[Thursday .. Sunday]
+returns [Thursday, Friday, Saturday, Sunday]
+
+[minBound :: maxBound] :: [Day]
+returns [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+
+##### TYPE SYNONYMS #####
+
+Previously, we mentioned that when writing types, the [Char] and String types are equivalent
+and interchangeable. That's implemented with type synonyms. 
+Type synonyms don't really do anything per se, they're just about giving some types different
+names so that they make more sense to someone reading our code and documentation. 
+
+Here's how the standard library defines String as a synonym for [Char]:
+
+type String = [Char]
+
+We've introduced the type keyword. The keyword might be a bit misleading because we're 
+not actually making anything new (we did that with the data keyword), we're just making a
+synonym for an already existing type. 
+
+If we make a function that converts a string to uppercase, and call it toUpperString,
+we can give it a type declaration of
+    toUpperString :: [Char] -> [Char]
+or
+    toUpperString :: String -> String
+Both of these are essentially the same, only the latter is nicer to read. 
+
+When we were dealing with the Data.Map module, we first represented a phonebook with
+an association list before converting it to a map. As we've already found out, an
+association list is a list of key-value pairs. Let's look at a phonebook that we had:
+
+phoneBook :: [(String,String)]
+phoneBook =    
+    [("betty","555-2938")   
+    ,("bonnie","452-2928")   
+    ,("patsy","493-2928")   
+    ,("lucille","205-2928")   
+    ,("wendy","939-8282")   
+    ,("penny","853-2492")   
+    ]
+
+We see that the type of phoneBook is [(String, String)]
+That tells us that it's an association list that maps from strings to strings, but not much else. 
+Let's make a type synonym to convey some more information in the type declaration
+
+type PhoneBook = [(String, String)]
+
+Now the type declaration for our phonebook can be
+    phoneBook :: PhoneBook
+
+Let's make a type synonym for String as well:
+
+type PhoneNumber = String
+type Name = String
+type PhoneBook = [(Name, PhoneNumber)]
+
+Giving the String type synonyms is something that Haskell programmers do when they want
+to convey more information about what the Strings in their function should be used as,
+and what they represent. 
+
+So now, when we implement a function that takes a name and a number, and sees if that name
+and number combination is in our phonebook, we can give it a very pretty and descriptive type declaration:
+
+inPhoneBook :: Name -> PhoneNumber -> PhoneBook -> Bool
+inPhoneBook name pnumber pbook = (name, pnumber) `elem` pbook
+
+If we decided not to use type synonyms, our function would have a type of
+    String -> Stirng -> [(String,String)] -> Bool
+In this case, the type declaration that took advantage of type synonyms is easier to understand. 
+However, you shouldn't go overboard with them. We introduce type synonyms to either describe what some
+existing type represents in our functions (and thus our type declarations become better documentation)
+or when something has a long-ish type that's repeated a lot (like [(String, String)]) but represents
+something more specific in the context of our functions. 
+
+
+
 -}

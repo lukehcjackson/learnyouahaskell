@@ -649,6 +649,552 @@ If we went to implement this, we would probably do a qualified import of Data.Ma
 In that case, type constructors also have to be preceeded with the module name:
     type IntMap = Map.Map Int
 
+Another datatype that takes two types as its parameters is the Either a b type. This is roughly how it's defined:
+
+data Either a b = Left a | Right b deriving (Eq, Ord, Read, Show)
+
+It has two value constructors:
+If the Left is used, then its contents are of type a
+if Right is used, then its contents are of type b
+So we can use this type to encapsulate a value of one type or another, and then when we get a value of type Either a b, we usually pattern match on both Left and Right
+and do different stuff based on which one of them it was:
+
+Right 20
+returns Right 20
+
+Left "w00t"
+returns Left "w00t"
+
+:t Right 'a'
+returns Right 'a' :: Either a Char
+
+:t Left True
+returns Left True :: Either Bool b
+
+So far, we've seen that 'Maybe a' was mostly used to represent the results of computations that could have either failed or not. 
+But sometimes, 'Maybe a' isn't good enough because Nothing doesn't really convey much information other than that something has failed. 
+That's fine for functions that can only fail in one way, or if we don't care how and why the function failed. 
+A Data.Map lookup fails only if the key we were looking for wasn't in the map, so we know exactly what happened. 
+However, when we're interested in HOW some function failed or WHY, we usually use the result type of Either a b, wehre a is some sort of type that
+can tell us something about the possible failure and b is the type of a successful computation. Hence, errors use the Left value constructor while results use Right. 
+
+Example: A high school has lockers. Each locker has a code combination. When a student wants a new locker, they tell the supervisor which locker number they want and he gives them the code. 
+However, if someone is already using that locker, he can't tell them the code for the locker and they have to pick a different one. 
+We'll use a map from Data.Map to represent the lockers. It'll map from locker numbers to a pair of whether or not the locker is in use, and the locker code. 
+
+import qualified Data.Map as Map
+data LockerState = Taken | Free deriving (Show, Eq)
+type Code = String
+type LockerMap = Map.Map Int (LockerState, Code)
+
+We introduce a new data type to represent whether a locker is taken or free
+We make a type synonym for the locker code
+We also make a type synonym for the type that maps from integers to pairs of locker state and locker code
+
+Now we will make a function that searches for the code in a locker map.
+We will use an Either String Code type to represent our result, becauses the lookup can fail in two ways:
+The locker could be taken, in which case we can't tell the code OR the locker number might not exist at all. 
+If the lookup fails, we will use a String to say what's happened. 
+
+lockerLookup :: Int -> Either String Code
+lockerLookup lockerNumber map = 
+    case Map.lookup lockerNumber map of
+        Nothing -> Left $ "Locker Number " ++ show lockerNumber ++ " doesn't exist!"
+        Just (state, code) -> if state /= Taken
+                                then Right code 
+                                else Left $ "Locker " ++ show lockerNumber ++ " is already taken!"
+
+We do a normal lookup in the map. 
+If we get a Nothing, we return a value of type Left String, saying that the locker doesn't exist at all. 
+If we do find the key, we do an additional check to see if the locker is taken.
+If it is, return a Left saying that it's already taken.
+If it isn't return a value of type Right Code, in which we give the student the correct code for the locker. 
+It's actually a Right String, but we introduced the Code = String type synonym to introduce some additional context / documentation into the type declaration. 
+
+Here's an example map:
+
+lockers :: LockerMap  
+lockers = Map.fromList   
+    [(100,(Taken,"ZD39I"))  
+    ,(101,(Free,"JAH3I"))  
+    ,(103,(Free,"IQSA9"))  
+    ,(105,(Free,"QOTSA"))  
+    ,(109,(Taken,"893JJ"))  
+    ,(110,(Taken,"99292"))  
+    ] 
+
+Now let's try our function:
+
+ghci> lockerLookup 101 lockers  
+Right "JAH3I"  
+ghci> lockerLookup 100 lockers  
+Left "Locker 100 is already taken!"  
+ghci> lockerLookup 102 lockers  
+Left "Locker number 102 doesn't exist!"  
+ghci> lockerLookup 110 lockers  
+Left "Locker 110 is already taken!"  
+ghci> lockerLookup 105 lockers  
+Right "QOTSA"  
+
+We could have used a 'Maybe a' to represent the result, but then we wouldn't know why we couldn't get the code. 
+But now, we have information about the failure in our result type. 
+
+##### RECURSIVE DATA TYPES #####
+
+We have seen that a constructor in an algebraic data type can have several (or zero) fields, and each field must be of some concrete type. 
+With that in mind, we can make types whose constructors have fields that are of the same type!
+Using that, we can create recursive data types, where one value of some type contains values of that type, which in turn contain more values of the same type, and so on... 
+
+[5] is just syntactic sugar for 5:[].
+On the left side of the : is a value, and on the right side, there's a list. In this case, the empty list. 
+[4,5] is the same as 4:(5:[])
+Looking at the first :, it also has a value on the left (4) and a list (5:[]) on the right.
+The same is true for [3,4,5,6] = 3:(4:(5:(6:[]))) = 3:4:5:6:[]
+
+We could say that a list can be an empty list, or it can be an element joined together with a : to another list (that can be [] or not)
+
+Let's use algebraic data types to implement our own list:
+
+data List a = Empty | Cons a (List a) deriving (Show, Read, Eq, Ord)
+
+This reads just like our definition of lists from earlier. It's either an empty list, or a combination of a head with some value and a list. 
+If this is confusing we can also write it in record syntax:
+
+data List a = Empty | Cons { listHead :: a, listTail :: List a } deriving (Show, Read, Eq, Ord)
+
+Cons is another word for :
+In lists, : is actually a constructor that takes a value and another list, and returns a list. 
+
+We can already use our new list type. It has two fields - one of type 'a' and one of type '[a]'. 
+
+Empty
+returns Empty
+
+5 `Cons` Empty
+returns Cons 5 Empty
+
+4 `Cons` (5 `Cons` Empty)
+returns Cons 4 (Cons 5 Empty)
+
+Calling Cons in an infix manner shows how it is just like :
+Empty is like []
+4 `Cons` (5 `Cons` Empty) is like 4:(5:[])
+
+We can define functions to be automatically infix, by making them comprised only of special characters. 
+We can also do the same with constructors, since they're just functions that return a data type:
+
+infixr 5 :-:
+data List a = Empty | a :-: (List a) deriving (Show, Read, Eq, Ord)
+
+First off, note the new syntactic construct: the fixity declaration. 
+When we define functions as operators, we can use that to give them a fixity (but we don't have to!)
+A fixity states how tightly the operator binds, and whether it's left-associative or right-associative. 
+For instance, *'s fixity is infixl 7 *, and +'s fixity is infixl 6
+That means they're both left-associative => (4 * 3 * 2) = ((4 * 3) * 2)
+but * binds tighter than +, because it has a greater fixity, so 5 * 4 + 3 = (5 * 4) + 3
+
+Otherwise, we just wrote a :-: (List a) instead of Cons a (List a)
+Now we can write out lists in our list type like this:
+
+3 :-: 4 :-: 5 :-: Empty
+returns 3 ((:-:) 4 ((:-:) 5 Empty))
+
+When deriving Show for our type, Haskell will still display it as if the constructor was a prefix function, hence the parenthesis (:-:)
+    remember 4 + 3 is the same as (+) 4 3
+
+Let's make a function that adds  two of our lists together. This is how ++ is defined for normal lists:
+
+infixr 5 ++
+(++) :: [a] -> [a] -> [a]
+[]     ++ ys = ys
+(x:xs) ++ ys = x : (xs ++ ys)
+
+So let's just steal that for our own list. Let's call the function .++ 
+
+infixr 5 .++
+(.++) :: List a -> List a -> List a
+Empty .++ ys = ys
+(x :-: xs) .++ ys = x :-: (xs .++ ys)
+
+And let's see if it works:
+
+    ghci> let a = 3 :-: 4 :-: 5 :-: Empty  
+    ghci> let b = 6 :-: 7 :-: Empty  
+    ghci> a .++ b  
+    (:-:) 3 ((:-:) 4 ((:-:) 5 ((:-:) 6 ((:-:) 7 Empty))))  
+
+Great! 
+If we wanted to, we could implement all of the functions that operate on lists for our own type. 
+
+Notice how we pattern matched on (x :-: xs). That works because pattern matching is actually about matching constructors. 
+We an match on :-: because it is a constructor for our own list type, and we can also match on : because it is a constructor for the built-in list type. 
+The same goes for []
+Because pattern matching works (only) on constructors, we can match for stuff like that, normal prefix constructors, and things like 8 or 'a', which are essentially constructors for the numeric and character types. 
+
+Let's implement a binary search tree. 
+An element points to two elements, one on it's left and one on it's right
+The element to the left is smaller, the element to the right is bigger
+Each of those elements can also point to two elements (or one, or none)
+In effect, each element has up to two sub-trees. 
+We know that all the elements in the right sub-tree of, say, 5, will be smaller than 5. 
+If we needed to find 8 and started at 5, we would go right because 8 > 5. We land at 7 => go right again because 7 > 8.
+
+Sets and maps from Data.Set and Data.Map are implemented using trees, only instead of normal binary search trees, they use balanced binary search trees - which are always balanced. 
+
+Let's implement a BST. 
+Let's say a tree is either an empty tree, or it's an element that contains some value and two trees. 
+Let's use an algebraic data type:
+
+data Tree a = EmptyTree | Node a (Tree a) (Tree a) deriving (Show, Read, Eq)
+
+Instead of manually building a tree, we're going to make a function that takes a tree and an element, and inserts the element. 
+We do this by comparing the value we want to insert with the root node. If it's smaller -> go left, if it's larger -> go right. 
+Keep going for every subsequent node until we reach an empty tree. 
+Once we reach an empty tree, insert a node with that value instead of the empty tree. 
+
+In C we would do this by modifying the pointers and values inside the tree. 
+In Haskell, we can't really modify the tree - we have to make a new sub-tree every time we go left or right, and in the end return a whole new tree. 
+Hence, the type for the insertion function is going to be something like a -> Tree a -> Tree a
+It takes an element and a tree, and returns a new tree that has that element inside. 
+
+singleton :: a -> Tree a
+singleton x = Node x EmptyTree EmptyTree
+
+treeInsert :: (Ord a) => a -> Tree a -> Tree a
+treeInsert x EmptyTree = singleton x
+treeInsert x (Node a left right)
+    | x == a = Node x left right
+    | x < a = Node a (treeInsert x left) right
+    | x > a = Node a left (treeInsert x right)
+
+The singleton function is a shortcut for making a node that has some value and two empty sub-trees.
+In the insertion function, we first have the edge condition (inserting into an empty tree) as a pattern.
+    If we've reached an empty sub-tree, that means we're where we want to be. Instead of the empty tree, we put a singleton tree with our element. 
+If we're not inserting into an empty tree, then we have to check some things. 
+First off, if the element we're inserting is equal to the root element, just return a tree that's the same. 
+If it's smaller than the root, return a tree with the same root value, the same right sub-tree, but instead of the left sub tree, put a tree that has our value inserted into it. 
+The same goes (but the other way around) for if our value we're inserting is larger than the root. 
+
+Let's make a function that checks if an element is in the tree. 
+First define the edge condition - if we're looking for an element in an empty tree, then it's not in there. 
+This is the same edge condition as when we search for an item in an empty list!
+If we're not searching in an empty tree, then we check some things:
+If the element in the root node is what we're searching for, great
+Otherwise, if the element we're searching for is smaller than the root node, search the left sub-tree
+Otherwise, search the right sub-tree
+
+treeElem :: (Ord a) => a -> Tree a -> Bool
+treeElem x EmptyTree = False
+treeElem x (Node a left right)
+    | x == a = True
+    | x < a = treeElem x left
+    | x > a = treeElem x right
+
+Let's try it out
+Instead of manually building a tree let's use a fold to build a tree from a list
+
+ghci> let nums = [8,6,4,1,7,3,5]  
+ghci> let numsTree = foldr treeInsert EmptyTree nums  
+ghci> numsTree  
+Node 5 (Node 3 (Node 1 EmptyTree EmptyTree) (Node 4 EmptyTree EmptyTree)) (Node 7 (Node 6 EmptyTree EmptyTree) (Node 8 EmptyTree EmptyTree))
+
+        5
+    3       7
+  1   4   6   8
+
+In that foldr, treeInsert was the folding function (it takes a tree and a list element, and produces a new tree) and EmptyTree was the starting accumulator.
+nums was of course the list we were folding over. 
+
+    ghci> 8 `treeElem` numsTree  
+    True  
+    ghci> 100 `treeElem` numsTree  
+    False  
+    ghci> 1 `treeElem` numsTree  
+    True  
+    ghci> 10 `treeElem` numsTree  
+    False  
+
+##### TYPECLASSES 102 #####
+
+So far, we've seen some of the standard Haskell typeclasses and we've seen which types are in them. 
+We've also learned how to automatically make our own types instances of the standard typeclasses by asking Haskell to derive the instances for us. 
+In this section, we're going to learn how to make our own typeclasses, and how to make types instances of them by hand. 
+
+A quick recap on typeclasses: typeclasses are like interfaces. 
+A typeclass defines some behaviour (like comparing for equality, comparing for ordering, enumeration)
+and then types that can behave in that way are made instances of that typeclass. 
+The behaviour of typeclasses is achieved by defining functions, or just type declarations that we then implement. 
+So when we say a type is an instance of a typeclass, we mean that we can use the functions that the typeclass defines with our type. 
+
+Typeclasses have pretty much nothing to do with classes like in Java, Python, ...
+
+The Eq typeclass is for stuff that can be equated. 
+It defines the functions == and /=. 
+If we have a type (say Car) and comparing two cars with the equality function == makes sense, then it makes sense for Car to be an instance of Eq. 
+This is how the Eq class is defined in the standard prelude:
+
+class Eq a where
+    (==) :: a -> a -> Bool
+    (/=) :: a -> a -> Bool
+    x == y = not (x /= y)
+    x /= y = not (x == y)
+
+First off, when we write 'class Eq a where', this means we're defining a new typeclass and that's called Eq. 
+The 'a' is the type variable, and it means that 'a' will play the role of the type that we will soon be making an instance of Eq. 
+It doesn't have to be called 'a' or even be one letter, it just has to be a lowercase word. 
+Then, we define several functions. It's not mandatory to implement the function bodies themselves, we just have to specify the type declarations for the functions. 
+
+It might be easier to understand if we instead wrote
+    class Eq equatable where
+and then specified the type declarations like
+    (==) :: equatable -> equatable -> Bool
+
+We DID actually implement the function bodies for the function Eq defines, only we defined them in terms of mutual recursion. 
+We said that two instances of Eq are equal if they are not different, and they are different if they are not equal. 
+We didn't HAVE to do this, but we will see how it helps us out soon. 
+
+If we have 'class Eq a where' which has a type declaration '(==) :: a-> a-> Bool',
+then when we later examine the type of that function, it will have a type of '(Eq a) => a -> a -> Bool'
+
+So once we have a class, what can we do with it?
+Not much.
+But once we start making types instances of that class, we start getting some nice functionality. 
+Have a look at this type:
+
+data TrafficLight = Red | Yellow | Green
+
+It defines the state of a traffic light. We didn't derive any class instances for it. 
+That's because we're going to write some instances for it by hand, even though we COULD derive them for types like Eq and Show.
+Here's how we make it an instance of Eq:
+
+instance Eq TrafficLight where
+    Red == Red = True
+    Green == Green = True
+    Yellow == Yellow = True
+    _ == _ = False
+
+We did this using the 'instance' keyword:
+    'class' is for defining new typeclasses
+    'instance' is for making our types instances of typeclasses
+
+When we were defining Eq, we wrote 'class Eq a where' and we said that 'a' takes the role of whichevr type will be made an instance later on. 
+We can see that here, because when we're making an instance, we write 'instance Eq TrafficLight where'. We replace 'a' with the actual type. 
+
+Because == was defined in terms of /= and vice versa in the class declaration, we only had to overwrite one of them in the instance declaration. 
+That's called the minimal complete definition for the typeclass - the minimum of functions that we have to implement so that our type can behave like the class advertises. 
+To fulfill the minimal complete definition for Eq, we have to overwrite either one of == or /=. 
+If Eq was defined simply like:
+
+class Eq a where
+    (==) :: a -> a -> Bool
+    (/=) :: a -> a -> Bool
+
+we would have to implement both of these functions when making a type an instance of it, because Haskell wouldn't know how these two functions are related. 
+In this case the minimal complete definition would be both == and /=. 
+
+You can see that we implemented == by doing pattern matching. 
+Since there are many more cases where two lights are not equal, we just specify the ones that ARE equal 
+and then do a catch-all pattern saying that if it's none of the previous combinations, then the two lights aren't equal. 
+
+Let's make an instance of Show by hand. 
+To satisfy the minimal complete definition for Show, we just have to implement its show function, which takes a value and turns it into a String. 
+
+instance Show TrafficLight where
+    show Red = "Red light"
+    show Yellow = "Yellow light"
+    show Green = "Green light"
+
+Once again, we use pattern matching. 
+Let's see it in use:
+
+    ghci> Red == Red  
+    True  
+    ghci> Red == Yellow  
+    False  
+    ghci> Red `elem` [Red, Yellow, Green]  
+    True  
+    ghci> [Red, Yellow, Green]  
+    [Red light,Yellow light,Green light]  
+
+We could have just derived Eq and it would have had the same effect. 
+However, deriving Show would have just directly translated the value constructors to Strings. 
+But if we want lights to appear like "Red light", then we have to make the instance declaration by hand. 
+
+You can also make typeclasses that are subclasses of other typeclasses. 
+The class declaration for Num is a bit long, but here's the first part:
+
+class (Eq a) => Num a where
+    ...
+
+As we mentioned previously, there are a lot of places where we can cram in class contraints. 
+This is just like writing 'class Num a where', only we state that our type 'a' must be an instance of Eq. 
+We're essentially saying that we have to make a type an instance of Eq before we can make it an instance of Num. 
+Before some type can be considered a number, it makes sense that we can determine whether values of that type can be equated or not. 
+That's all there is to subclassing, really. It's just a class constraint on a class declaration. 
+When defining function bodies in the class declaration, or when defining them in instance declarations, we can assume that 'a' is part of Eq and so we can use == on values of that type. 
+
+How are the Maybe or list types made as instances of typeclasses?
+What makes Maybe different from, say, TrafficLight is that Maybe in itself isn't a concrete type. 
+It's a type constructor that takes one type parameter (like Char or something) to produce a concrete type (like Maybe Char)
+Let's take a look at the Eq typeclass again:
+
+class Eq a where  
+    (==) :: a -> a -> Bool  
+    (/=) :: a -> a -> Bool  
+    x == y = not (x /= y)  
+    x /= y = not (x == y) 
+
+From the type declarations, we can see that the 'a' is used as a concrete type, because all the types in functions have to be concrete
+    (you can't have a function of type a -> Maybe but you can have a -> Maybe a or Maybe Int -> Maybe String)
+That's why we can't do something like
+
+instance Eq Maybe where
+    ...
+
+Because, like we've seen, the 'a' has to be a concrete type but Maybe isn't one. 
+It's a type constructor that takes one parameter and produces a concrete type. 
+It would also be tedious to write 'instance Eq (Maybe Int) where' , 'instance Eq (Maybe Char) where' , ... for every type ever. 
+So we could write it out like so:
+
+instance Eq (Maybe m) where
+    Just x == Just y = x == y
+    Nothing == Nothing = True
+    _ == _ = False
+
+This is like saying that we want to make all types of the form 'Maybe something' an instance of Eq. 
+We even could have written 'instance Eq (Maybe something) where' but Haskell style is usually to use single letters. 
+The (Maybe m) here plays the role of the 'a' from 'class Eq a where'. 
+While Maybe isn't a concrete type, Maybe m is. 
+By specifying a type parameter (m), we said that we want all types that are in the form 'Maybe m', where m is any type, to be an instance of Eq. 
+
+There's a problem with this, however. 
+We use == on the contents of the Maybe, but we have no assurance that what the Maybe contains can be used with Eq!
+So we have to modify our instance declaration like this:
+
+instance (Eq m) => Eq (Maybe m) where
+    Just x == Just y = x == y
+    Nothing == Nothing = True
+    _ == _ = False
+
+We had to add a class contraint. 
+With this instance declaration, we say this:
+We want all types of the form 'Maybe m' to be part of the Eq typeclass, but only those types where the m is also part of Eq. 
+This is actually how Haskell would derive the instance too!
+
+Most of the time, class constraints in class declarations are used for making a typeclass a subclass of another typeclass
+and class constraints in instance declarations are used to express requirements about the contents of some type. 
+For instance, here we have required the contents of Maybe to also be part of the Eq typeclass. 
+
+When making instances, if you see that a type is used as a concrete type in the type declarations (like the a in a -> a -> Bool),
+you have to supply type parameters and add parentheses so you end up with a concrete type.
+
+If you want to see what the instances of a typeclass are, just do :info YourTypeClass in ghci. 
+So :info Num will show which functions the typeclass defines, and it will give you a list of the types in the typeclass. 
+:info works for types and type constructors too. :info Maybe gives you the typeclasses that Maybe is an instance of. 
+:info can also show the type declaration of a function. 
+
+#### A YES-NO TYPECLASS ####
+
+In JavaScript, you can do something like
+    if ("WHAT") alert ("YEAH") else alert ("NO")
+This will alert "YEAH" because JavaScript considers a non-empty string to be a truthy value. 
+
+Even though stricly using Bool for boolean semantics works better in Haskell, let's try and implement that JavaScript-ish behaviour anyway 
+
+We will start out with a class declaration
+
+class YesNo a where
+    yesno :: a -> Bool
+
+The YesNo typeclass defines one function yesno. That function takes one value of a type that can be considered to hold some concept of true-ness,
+and tells us for sure if it's true or not. 
+Notice that from the way we use the 'a' in the function, 'a' has to be a concrete type. 
+
+Let's define some instances. 
+For numbers, we'll assume that (like in JS) any number that isn't 0 is true-ish and 0 is false-ish
+
+instance YesNo Int where
+    yesno 0 = False
+    yesno _ = True
+
+Empty lists (and by extension, Strings) are a no-ish value, while non-empty lists are a yes-ish
+
+instance YesNo [a] where
+    yesno [] = False
+    yesno _ = True
+
+Notice how we just put a type parameter 'a' in there to make the list a concrete type, even though we don't make any assumptions about the type that's contained in the list. 
+
+Bool itself also holds true-ish-ness and false-ish-ness:
+
+instance YesNo Bool where
+    yesno = id
+
+id is a standard library function that takes a parameter and returns the same thing,
+which is what we would have written anyway. 
+
+Let's make 'Maybe a' an instance too
+
+instance YesNo (Maybe a) where
+    yesno (Just _) = True
+    yesno Nothing = False
+
+We didn't need a class constraint because we made no assumption about the contents of the Maybe. 
+We just said that it's true-ish if it's a Just value, and false-ish if it's a Nothing. 
+We still had to write out (Maybe a) instead of just Maybe, because a Maybe -> Bool function can't exist, but Maybe a -> Bool is fine. 
+
+We previously defined a Tree type, which represents a BST. 
+We can say an empty tree is false-ish and anything that's not an empty tree is true-ish. 
+
+instance YesNo (Tree a) where
+    yesno EmptyTree = False
+    yesno _ = True
+
+Can a traffic light be a yes or no value?
+Sure. If it's red you stop, if it's green you go. Yellow? You still probably go
+
+instance YesNo TrafficLight where
+    yesno Red = False
+    yesno _ = True
+
+Now that we have some instances we can try this out:
+
+ghci> yesno $ length []  
+False  
+ghci> yesno "haha"  
+True  
+ghci> yesno ""  
+False  
+ghci> yesno $ Just 0  
+True  
+ghci> yesno True  
+True  
+ghci> yesno EmptyTree  
+False  
+ghci> yesno []  
+False  
+ghci> yesno [0,0,0]  
+True  
+ghci> :t yesno  
+yesno :: (YesNo a) => a -> Bool
+
+That works. 
+Let's make a function that mimics the if statement, but it works with YesNo values
+
+yesnoIf : (YesNo y) => y -> a -> a -> a
+yesnoIf yesnoVal yesResult noResult = if yesno yesnoVal then yesResult else noResult
+
+ghci> yesnoIf [] "YEAH!" "NO!"  
+"NO!"  
+ghci> yesnoIf [2,3,4] "YEAH!" "NO!"  
+"YEAH!"  
+ghci> yesnoIf True "YEAH!" "NO!"  
+"YEAH!"  
+ghci> yesnoIf (Just 500) "YEAH!" "NO!"  
+"YEAH!"  
+ghci> yesnoIf Nothing "YEAH!" "NO!"  
+"NO!"  
+
 
 
 -}

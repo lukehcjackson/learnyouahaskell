@@ -615,6 +615,40 @@ existing type represents in our functions (and thus our type declarations become
 or when something has a long-ish type that's repeated a lot (like [(String, String)]) but represents
 something more specific in the context of our functions. 
 
+Type synonyms can also be parameterised. If we want a type that represents an association list type
+but still want it to be general, so it can use any type as the keys and values, we can do this:
+
+type AssocList k v = [(k,v)]
+
+Now, a function that gets the value by a key in an association list can have a type of
+    (Eq k) => k -> AssocList k v -> Maybe v
+AssocList is a type constructor that takes two types, and produces a concrete type, like AssocList Int String, for instance. 
+
+When we talk about concrete types, we mean fully applied types like Map Int String, or if we're
+dealing with a polymorphic function, [a] or (Ord a) => Maybe a
+'Maybe' is not a type, it's a type constructor. When we apply an extra type to Maybe, like Maybe String, 
+then it becomes a concrete type. 
+Values can only have types that are concrete types. 
+
+Just like how we can partially apply functions to get new functions, we can partially apply
+type parameters and get new type constructors from them. 
+Just like we call a function with too few parameters to get back a new function, we can
+specify a type constructor with too few type parameters and get back a partially applied type constructor. 
+
+If we wanted a type that represents a map (from Data.Map) from integers to something, we could either do this:
+
+type IntMap v = Map Int v
+
+or we could do it like this:
+
+type IntMap = Map Int
+
+Either way, the IntMap type constructor takes one parameter, and that is the type of whatever the integers will point to. 
+
+If we went to implement this, we would probably do a qualified import of Data.Map 
+In that case, type constructors also have to be preceeded with the module name:
+    type IntMap = Map.Map Int
+
 
 
 -}

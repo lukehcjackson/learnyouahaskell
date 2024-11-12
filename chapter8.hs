@@ -1,4 +1,3 @@
-
 {-
 MAKING OUR OWN TYPES AND TYPECLASSES
 
@@ -1195,6 +1194,347 @@ ghci> yesnoIf (Just 500) "YEAH!" "NO!"
 ghci> yesnoIf Nothing "YEAH!" "NO!"  
 "NO!"  
 
+##### THE FUNCTOR TYPECLASS #####
 
+So far, we've encountered a lot of the typeclasses in the standard library. 
+We've played with Ord, which is for stuff that can be ordered. 
+We've used Eq, which is for things that can be equated. 
+We've seen Show, which presents an interface for types whose values can be displayed as Strings. 
+Read is for whenever we need to convert a String to a value of some type. 
+
+Now we will look at the Functor typeclass, which is for things that can be mapped over. 
+One example of this is lists. 
+
+This is how the functor typeclass is implemented:
+
+class Functor f where
+    fmap :: (a -> b) -> f a -> f b
+
+It defines one function, fmap. 
+The type of fmap is interesting:
+In the definitions of typeclasses so far, the type variable that played the role of the
+type in the typeclass was a concrete type, like the 'a' in 
+    (==) :: (Eq a) => a -> a -> Bool
+But now, the f is not a concrete type (a type that a value can hold, like Int, Bool, Maybe String)
+but a type constructor that takes one type parameter. 
+
+A quick refresher example:
+Maybe Int is a concrete type, but Maybe is a type constructor that takes one type as the parameter. 
+
+Anyway, we see that fmap takes a function from one type to another,
+and a functor applied with one type, and returns a functor applied with another type. 
+
+This sounds confusing but it will be clearer with examples. 
+
+The type declaration is similar to that of map:
+    map :: (a -> b) -> [a] -> [b]
+It takes a function from one type to another (a -> b) and a list of one type [a]
+and returns a list of another type [b].
+This is a functor!
+map is just an fmap that only works on lists. 
+
+Here's how the list is an instance of the Functor typeclass:
+
+instance Functor [] where
+    fmap = map
+
+That's it!
+Notice we didn't write 'instance Functor [a] where', because from
+    fmap :: (a -> b) -> f a -> f b
+we see that the f has to be a type constructor that takes one type. 
+[a] is already a concrete type (of a list with any type inside it),
+while [] is a type constructor that takes one type, and can produce types such as [Int], [String], [[String]], ...
+
+Since for lists, fmap is just map, we get the same results when using them on lists
+map :: (a -> b) -> [a] -> [b]
+
+fmap (*2) [1..3]
+returns [2,4,6]
+
+map (*2) [1..3]
+returns [2,4,6]
+
+What happens when we map or fmap over an empty list?
+Well we of course get an empty list []. 
+It just turns an empty list of type [a] into an empty list of type [b].
+
+Types that can act like a box can be functors. 
+You can think of a list as a box that has an infinite amount of little compartments,
+and they can all be empty, or one can be full and the others empty, or any number of them can be full. 
+
+What else has the property of being like a box?
+For one, the 'Maybe a' type. 
+In a way, it's like a box that can either hold nothing, in which case the value is 'Nothing'
+or it can hold one item, like "HAHA", in which case it has a value of 'Just "HAHA"' 
+Here's how Maybe is a functor:
+
+instance Functor Maybe where
+    fmap f (Just x) = Just (f x)
+    fmap f Nothing = Nothing
+
+Again, notice how we wrote 'instance Functor Maybe where' instead of
+    'instance Functor (Maybe m) where'
+like we did when we were dealing with Maybe and YesNo. 
+Functor wants a type constructor that takes one type, and not a concrete type
+
+If you mentally replace the 'f's with 'Maybe's, fmap acts like
+    (a -> b) -> Maybe a -> Maybe b
+for this particular type, which looks okay. If you replaced the 'f's with 'Maybe m', then
+    (a -> b) -> Maybe m a -> Maybe m b
+which doesn't make any sense since Maybe only takes one parameter
+
+The fmap implementation here is pretty simple. If it's an empty value of Nothing, 
+then just return a Nothing. 
+If we map over an empty box, we get an empty box back. 
+Just like how if we map over an empty list, we get an empty list. 
+If it's not an empty value, but rather a single value packed up in a Just,
+then we apply the function on the contents of the Just. 
+
+ghci> fmap (++ " HEY GUYS IM INSIDE THE JUST") (Just "Something serious.")
+Just "Something serious. HEY GUYS IM INSIDE THE JUST"
+ghci> fmap (++ " HEY GUYS IM INSIDE THE JUST") Nothing
+Nothing
+ghci> fmap (*2) (Just 200)
+Just 400
+ghci> fmap (*2) Nothing
+Nothing
+
+Another thing that can be mapped over and made an instance of Functor is our 'Tree a' type. 
+It can be thought of as a box in a way (holds several or no values)
+and the Tree type constructor takes exactly one parameter. 
+If you look at fmap as if it were a function made only for Tree, it's type signature would be
+    (a -> b) -> Tree a -> Tree b
+We're going to use recursion on this one. 
+Mapping over an empty tree will produce an empty tree. 
+Mapping over a non-empty tree will be a tree consisting of our function applied to the root value, 
+and it's left and right sub-trees will be the previous sub-trees, only our function will be mapped over them. 
+
+instance Functor Tree where
+    fmap f EmptyTree = EmptyTree
+    fmap f (Node x leftsub rightsub) = Node (f x) (fmap f leftsub) (fmap f rightsub)
+
+fmap (*2) EmptyTree
+returns EmptyTree
+
+fmap (*4) (foldr treeInsert EmptyTree [5,7,3,2,1,7])
+returns Node 28 (Node 4 EmptyTree (Node 8 EmptyTree (Node 12 EmptyTree (Node 20 EmptyTree EmptyTree)))) EmptyTree
+
+      28
+    4   x
+  x  8
+    x 12
+     x 20
+      x  x
+
+Great!
+How about Either a b? Can this be made a functor?
+The functor typeclass wants a type constructor that takes only one parameter but Either takes two. 
+We can partially apply Either by feeding it only one parameter, so it has one free parameter. 
+Here's how Either a is a functor in the standard library:
+
+instance Functor (Either a) where
+    fmap f (Right x) = Right (f x)
+    fmap f (Left x) = Left x
+
+We made 'Either a' an instance, instead of just 'Either'.
+That's because 'Either a' is a type constructor that takes one parameter, whereas 'Either' takes two. 
+If fmap was specifically designed for Either, the type signature would be
+    (b -> c) -> Either a b -> Either a c
+because that's the same as
+    (b -> c) -> (Either a) b -> (Either a) c
+
+In the implementation, we mapped in the case of a Right value constructor, but we didn't in the case of Left. 
+Why is that?
+Well, if we look back at how Either a b is defined, it's kind of like:
+    data Either a b = Left a | Right b
+If we wanted to map one function over both of them, a and b would have to be the same type. 
+If we tried to map a function that takes a String and returns a String, and the 'b' was a String but 'a' was a number, it wouldn't really work. 
+Also, from seeing what fmap's type would be if it operated only on Either values, we see that the first parameter has to remain the same,
+while the second one can change - and the first parameter is actualized by the Left value constructor. 
+
+This also goes nicely with our box analogy,
+if we think of the Left part as sort of an empty box with an error message written on the side, telling us why it's empty. 
+
+Maps from Data.Map can also be made a functor because they hold values (or not!)
+In the case of Map k v, fmap will map a function v -> v' over a map of type Map k v,
+and return a map of type Map k v'. 
+
+instance (Ord k) => Functor (Map.Map k) where
+    fmap f m = Map.fromList ( map (\(k,v) -> (k, f v)) (Map.toList m))
+
+Functors should obey some laws so that they may have some properties we can depend on and not think too much about
+If we use fmap (+1) over the list [1,2,3,4], we expect the result to be [2,3,4,5] rather than [5,4,3,2]
+If we use fmap (\a -> a) (the identity function, which just returns its parameter) over some list, we expect to get the original list back. 
+For example, if we gave the wrong functor instance to our Tree type, 
+using fmap over a tree where the left sub-tree of a node only has elements <node and the right sub-tree has only nodes >node,
+we might produce a new tree where that is no longer the case. 
+We'll go over the functor laws in more detail in a later chapter. 
+
+##### KINDS AND SOME TYPE-FOO #####
+
+Type constructors take other types as parameters to eventually produce concrete types. 
+That's like functions, which take parameters to produce values. 
+We've seen that type constructors can be partially applied 
+(Either String is a type that takes one type and produces a concrete type, like Either String Int)
+just like functions can.
+
+In this section we will look at formally defining how types are applied to type constructors,
+just lke we took a look at formally defining how values are applied to functions by using type declarations. 
+
+Values like 3, "YEAH", or takeWhile (functions are also values, because we can pass them around and such)
+each have their own type. 
+Types are little labels that values carry so that we can reason about the values. 
+But types have their OWN little labels, called 'kinds'. 
+A kind is more or less the type of a type. 
+
+What are kinds? Let's examine the kind of a type using :k in GHCI:
+
+:k Int
+returns Int :: *
+
+What does that mean?
+A * means that the type is a concrete type.
+A concrete type is a type that doesn't take any type parameters, and values can only have types that are concrete types. 
+
+Let's look at Maybe:
+
+:k Maybe
+returns Maybe :: * -> *
+
+The Maybe type constructor takes one concrete type (like Int)
+and then returns a concrete type (like Maybe Int)
+That's what this kind tells us. 
+Just like how Int -> Int means a function that takes an Int and returns an Int,
+* -> * means that the type constructor takes one concrete type and returns a concrete type. 
+Let's apply the type parameter to Maybe and see waht the kind of that type is. 
+
+:k Maybe Int
+returns Maybe Int :: *
+
+We applied the type parameter to Maybe and got back a concrete type. 
+
+Let's look at another kind:
+
+:k Either
+returns Either :: * -> * -> *
+
+This tells us that Either takes two concrete types as type parameters to produce a concrete type. 
+It also kind of looks like a type declaration of a function that takes two values and returns something. 
+Type constructors are curried (just like functions) so we can partially apply them. 
+
+:k Either String
+returns Either String :: * -> *
+
+:k Either String Int
+returns Either String Int :: *
+
+When we wanted to make 'Either' a part of the Functor typeclass, we had to partially apply it
+because Functor wants types that take only one parameter, while Either takes two. 
+In other words, Functor wants types of kind * -> *, 
+and so we had to partially apply Either to get a type of kind * -> * rather than its original * -> * -> *
+
+If we look at the definition for Functor again:
+
+class Functor f where
+    fmap :: (a -> b) -> f a -> f b
+
+we see that the f type variable is used as a type that takes one concrete type to produce a concrete type. 
+We know it has to produce a concrete type, because it's used as the type of a value in a function. 
+And from that, we can deduce that types that want to be friends with Functor have to be of kind * -> *. 
+
+Now, let's do some type-foo. 
+Take a look at this typeclass:
+
+class Tofu t where
+    tofu :: j a -> t a j
+
+That looks weird. 
+How would we make a type that could be an instance of such a strange typeclass?
+Let's look at what its kind would have to be
+Because j a is used as the type of a value that the tofu function takes as its parameter,
+j a has to have a kind of *. 
+We assume * for 'a', and so we can infer that j has to have a kind of * -> *. 
+We see that t has to produce a concrete value too, and it takes two types. 
+Knowing that 'a' has a kind of * and j has a kind of * -> *, 
+we infer that t has to have a kind of * -> ( * -> * ) -> *
+So it takes a concrete type (a), a type constructor that takes one concrete type (j) and produces a concrete type.
+Wow. 
+
+Okay, so let's make a type of kind * -> ( * -> * ) -> *
+Here's one way of going about it:
+
+data Frank a b = Frank {frankField :: b a} deriving (Show)
+
+How do we know this type has a kind of * -> ( * -> *) -> * ?
+Well, fields in algebraic data types are made to hold values, so they must be of kind *
+We assume * for 'a', which means that 'b' takes one type parameter so it's kind is * -> *
+Now we know the kinds of both a and b, and because they're parameters for Frank,
+we see that Frank has a kind of * -> ( * -> * ) -> *
+The first * is a, and the ( * -> * ) represents b
+Let's make some Frank values and check out their types
+
+ghci> :t Frank {frankField = Just "HAHA"}
+Frank {frankField = Just "HAHA"} :: Frank [Char] Maybe
+ghci> :t Frank {frankField = Node 'a' EmptyTree EmptyTree}
+Frank {frankField = Node 'a' EmptyTree EmptyTree} :: Frank Char Tree
+ghci> :t Frank {frankField = "YES"}
+Frank {frankField = "YES"} :: Frank Char []
+
+Because frankField has a type of form a b, its values must have types that are of a 
+similar form as well. So they can be Just "HAHA", which has a type of Maybe [Char],
+or it can have a value of ['Y','E','S'] which has a type of [Char]
+(if we used our own List type for this, it would have a type of List Char)
+And we see that the types of the Frank values correspond with the kind for Frank. 
+[Char] has a kind of * and Maybe has a kind of * -> *
+Because in order to have a value, it has to be a concrete type and thus has to be fully applied,
+every value of Frank ... ... has a kind of *
+
+Making Frank an instance of Tofu is pretty simple. 
+We see that tofu takes a 'j a' (e.g. Maybe Int) and returns a 't a j'. 
+So if we replace Frank with j, the result type would be Frank Int Maybe
+
+instance Tofu Frank where
+    tofu x = Frank x
+
+ghci> tofu (Just 'a') :: Frank Char Maybe
+Frank {frankField = Just 'a'}
+ghci> tofu ["HELLO"] :: Frank [Char] []
+Frank {frankField = ["HELLO"]}
+
+Let's do some more type-foo
+We have this data type:
+
+data Barry t k p = Barry { yabba :: p, dabba :: t k}
+
+And now we want to make it an instance of Functor. 
+Functor wants types of kind * -> * but Barry doesn't look like it has that kind. 
+
+What is the kind of Barry?
+Well, we see it takes three type parameters, so it's going to be
+    something -> something -> something -> *
+It's safe to say that p is a concrete type and thus has a kind of *
+For k, we assume *, and so by extension, t has a kind of * -> *
+Now, let's just replace those kinds with the somethings we used as placeholder:
+    (* -> *) -> * -> * -> *
+
+Let's check that with GHCI:
+
+:k Barry
+returns Barry :: (* -> *) -> * -> * -> *
+
+Now, to make this type a part of Functor, we have to partially apply the first two
+type parameters so that we're left with * -> *. 
+That means that the start of the instance declaration will be 
+    instance Functor (Barry a b) where
+If we look at fmap as if it was specifically made for Barry,
+it would have a type of 
+    fmap :: (a -> b) -> Barry c d a -> Barry c d b
+because we just replace the Functor's 'f' with 'Barry c d'
+The third type parameter from Barry will have to change, and we see that it's conveniently in its own field. 
+
+instance Functor (Barry a b) where
+    fmap f (Barry {yabba = x, dabba = y}) = Barry {yabba = f x, dabba = y}
+
+There we go. We just mapped f over the first field. 
 
 -}

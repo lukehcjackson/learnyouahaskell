@@ -184,5 +184,41 @@ It won't! This just gives the getLine I/O action a different name, called 'name'
 Remember, to get the value out of an I/O action, you have to perform it inside
 another I/O action by binding it to a name with <-
 
+I/O actions will only be performed when they are given a name of 'main', or when they're
+inside a bigger I/O action that we composed with a 'do' block. 
+We can also use a 'do' block to glue together a few I/O actions, that we can eventually
+use that I/O action in another 'do' block, and so on... 
+Either way, they'll only be performed when they fall into 'main'. 
+
+There's also one more case when I/O actions will be performed. 
+When we type out an I/O action in the GHCI and press return, it will be performed. 
+
+ghci> putStrLn "HEY"
+"HEY"
+
+Even when we just punch out a number or call a function in GHCI and press return, it will
+evaluate it (as much as it needs) and then call 'show' on it, and then it will print out
+that string to the terminal using putStrLn implicitly. 
+
+Remember let bindings? They have to be in the form of
+    let bindings in expression
+where bindings are names to be given to expressions, and expression is the expression
+that is to be evaluated that sees them. 
+We also said that in list comprehensions, the 'in' part isn't needed. 
+Well, you can use them in 'do' blocks pretty much like you use them in list comprehensions:
+
+import Data.Char 
+
+main = do
+    putStrLn "What's your first name?"
+    firstName <- getLine
+    putStrLn "What's your last name?"
+    lastName <- getLine
+    let bigFirstName = map toUpper firstName
+        bigLastName = map toUpper lastName
+    putStrLn $ "hey " ++ bigFirstName ++ " " ++ bigLastName ++ ", how are you?"
+
+See how the I/O actions in the 'do' block are lined up?
+
 
 -}

@@ -1232,5 +1232,971 @@ and to remove the task with index 2, we'll do
     todo remove todo.txt 2
 
 We'll start by making a dispatch association list. 
+It's going to be a simple association list that has command line args as keys, and functions
+as their corresponding values. 
+All of these functions will be of type [String] -> IO ()
+They will take the argument list as a parameter and return an I/O action that does
+the viewing, adding, deleting, etc. 
+
+import System.Environment 
+import System.Directory
+import System.IO 
+import Data.List
+
+dispatch :: [(String, [String] -> IO ())]
+dispatch = [ ("add", add)]
+           , ("view", view)
+           , ("remove", remove)
+           ]
+
+We have yet to define main, add, view and remove, so let's start with main:
+
+main = do
+    (command:args) <- getArgs
+    let (Just action) = lookup command dispatch
+    action args
+
+First, we get the arguments and bind them to (command:args)
+If you remember pattern matching, this means that the first argument with be bound
+to command, and the rest of them will get bound to args. 
+If we call our program like
+    todo add todo.txt "add this task"
+command will be 'add' and args will be ["todo.txt", "add this task"]
+
+In the next line, we look up our command in the dispatch list. 
+Because "add" points to add, we get Just add as a result
+We use pattern matching again to extract our function out of the Maybe
+What happens if our command isn't in the dispatch list?
+Well then the lookup will return Nothing, and everything goes wrong
+But we said we weren't concerned with bad input for now so we'll leave it at that
+
+Finally, we call our action function with the rest of the argument list. 
+That will return an I/O action that either adds an item, displays a list of items,
+or deletes and item
+Because that action is part of the main do block, it will get performed. 
+If we follow our concrete example so far, and our action is add, it will get called
+with args ["todo.txt", "add this task"] and return an I/O action that adds
+"add this task" to todo.txt 
+
+All that's left to do is implement add, view and remove. 
+Let's start with add:
+
+add :: [String] -> IO ()
+add [fileName, todoItem] = appendFile filename (todoItem ++ "\n")
+
+Next, let's implement the list viewing functionality
+If we want to view the items in a file, we could do
+    todo view todo.txt 
+So in the first pattern match, command will be 'view' and args will be ["todo.txt"]
+
+view :: [String] -> IO ()
+view [fileName] = do
+    contents <- readFile fileName
+    let todoTasks = lines contents
+        numberedTasks = zipWith (\n line -> show n ++ " - " ++ line) [0..] todoTasks
+    putStr $ unlines numberedTasks
+
+We already did pretty much the exact same thing in the other program when we were looking
+to delete items, only here we just display the tasks. 
+
+Finally, we'll implement remove. 
+It's going to be very similar to the program that only deleted the tasks. 
+The main difference is we don't hardcode todo.txt, but get it as an argument. 
+We're also not prompting the user for the task number to delete, but getting it as an argument. 
+
+remove :: [String] -> IO ()
+remove [fileName, numberString] = do
+    handle <- openFile fileName ReadMode
+    (tempName, tempHandle) <- openTempFile "." "temp"
+    contents <- hGetContents handle
+    let number = read numberString
+        todoTasks = lines contents
+        newTodoItems = delete (todoTasks !! number) todoTasks
+    hPutStr tempHandle $ unlines newTodoItems
+    hClose handle
+    hClose tempHandle
+    removeFile fileName
+    renameFile tempName fileName
+
+And so here's the whole program in one:
+
+import System.Environment 
+import System.Directory
+import System.IO
+import Data.List
+
+dispatch :: [(String, [String] -> IO ())]
+dispatch =  [ ("add", add)
+            , ("view", view)
+            , ("remove", remove)
+            ]
+ 
+main = do
+    (command:args) <- getArgs
+    let (Just action) = lookup command dispatch
+    action args
+
+add :: [String] -> IO ()
+add [fileName, todoItem] = appendFile fileName (todoItem ++ "\n")
+
+view :: [String] -> IO ()
+view [fileName] = do
+    contents <- readFile fileName
+    let todoTasks = lines contents
+        numberedTasks = zipWith (\n line -> show n ++ " - " ++ line) [0..] todoTasks
+    putStr $ unlines numberedTasks
+
+remove :: [String] -> IO ()
+remove [fileName, numberString] = do
+    handle <- openFile fileName ReadMode
+    (tempName, tempHandle) <- openTempFile "." "temp"
+    contents <- hGetContents handle
+    let number = read numberString
+        todoTasks = lines contents
+        newTodoItems = delete (todoTasks !! number) todoTasks
+    hPutStr tempHandle $ unlines newTodoItems
+    hClose handle
+    hClose tempHandle
+    removeFile fileName
+    renameFile tempName fileName
+
+### RANDOMNESS ###
+
+Many times while programming, you need to get some random data. 
+In most other programming languages, you have functions that give back some random number
+Each time you call the function, you get back a different random number
+Well - Haskell is a pure functional language
+That means it has referential transparency:
+This means that a function, if given the same parameters twice, must produce the same result twice
+This makes it a bit tricky for getting random numbers
+
+How do other languages make seemingly random numbers?
+They use information from your computer, like current time, mouse movement, etc.
+and use that to generate a number
+So in Haskell, we can make a random number if we make a function that takes some of that
+information as its parameter and based on that returns some value. 
+
+Enter the System.Random module. 
+It has all the functions that satisfy our need for randomness. 
+
+Let's have a look at one of the functions it exports, namely 'random':
+It's type is
+    random :: (RandomGen g, Random a) => g -> (a,g)
+The RandomGen typeclass is for types that can act as sources of randomness
+The Random typeclass is for things that can take on random values
+A boolean value can take on a random value, either True or False
+A number can also take a lot of different random values
+Can a function take on a random value? Probably not
+If we try to translate the type declaration of random to English, it's something like
+    it takes a random generator (our source of randomness) 
+    and returns a random value and a new random generator
+Why does it return a new random generator as well as the random value?
+We'll see in a moment!
+
+To use our random function, we have to get our hands on a random generator. 
+The System.Random module exports a cool type, namely StdGen, that is an instance of
+the RandomGen typeclass. 
+We can either make a StdGen manually or we can tell the system to give us one
+based on a multitude of sort-of-random stuff. 
+
+To manually make a random generator, use the mkStdGen function. 
+It has a type of 
+    mkStdGen :: Int -> StdGen
+It takes an integer, and based on that gives us a random generator. 
+Okay then, let's try using 'random' and 'mkStdGen' in tandem to make
+a (not-so random) random number
+
+random (mkStdGen 100)
+throws an error
+
+What?
+The random function can return a value of any type that's part of the Random typeclass
+So we have to tell Haskell what kind of type we want. 
+Also, let's not forget it returns a random value and a random generator in a pair.
+
+random (mkStdGen 100) :: (Int, StdGen)
+returns (-1984598320, 2340928 038402850)
+
+We get a number that looks random. 
+The first component of the tuple is the number, and the second component is a textual
+representation of our new random generator. 
+What happens if we call random with the same random generator again?
+Of course, we get the same result for the same parameters. 
+So let's try giving it a different random generator as a parameter. 
+
+ghci> random (mkStdGen 949494) :: (Int, StdGen)
+(539963926,466647808 1655838864)
+
+Great, a different number. We can use the type annotation to get different types back from
+that function. 
+
+ghci> random (mkStdGen 949488) :: (Float, StdGen)
+(0.8938442,1597344447 1655838864)
+ghci> random (mkStdGen 949488) :: (Bool, StdGen)
+(False,1485632275 40692)
+ghci> random (mkStdGen 949488) :: (Integer, StdGen)
+(1691547873,1597344447 1655838864)
+
+Let's make a function that simulates tossing a coin three times. 
+If random didn't return a new generator along with a random value, we'd have to make this 
+function take three random generators as a parameter and then return coin tosses for each of them
+But that sounds wrong, because if one random generator can make a random value of type Int, 
+(which can take on a load of different values), it should be able to make three coin tosses
+(which can take exactly 8 combinations).
+So this is where 'random' returning a new generator along with a new value comes in handy. 
+
+We'll represent a coin with a simple Bool - True is tails, False is heads. 
+
+threeCoins :: StdGen -> (Bool, Bool, Bool)
+threeCoins gen =   
+    let (firstCoin, newGen) = random gen
+        (secondCoin, newGen') = random newGen
+        (thirdCoin, newGen'') = random newGen'
+    in (firstCoin, secondCoin, thirdCoin)
+
+We call random with the generator we got as a parameter to get a coin and a new generator. 
+Then we call it again, only this time with the new generator, to get the second coin. 
+Do the same for the third coin. 
+Had we called it with the same generator every time, all the coins would have had the same
+value and we'd only be able to get (F,F,F) or (T,T,T) as a result. 
+
+Notice that we didn't have to do random gen :: (Bool, StdGen)
+That's because we already specified that we want booleans in the type declaration of the function
+That's why Haskell can infer we want a boolean value in this case. 
+
+So what if we want to flip four coins? Or five?
+Well, there's a function called 'randoms' that takes a generator and returns an
+infinite sequence of values based on that generator. 
+
+take 5 $ randoms (mkStdGen 11) :: [Int]
+returns [-2892234, 9827582745, 09140914, 981348275, 982745982734]
+
+Why doesn't randoms return a new generator as well as a list?
+We could implement the randoms function easily like this:
+
+randoms' :: (RandomGen g, Random a) => g -> [a]
+randoms' gen = let (value, newGen) = random gen in value:randoms' newGen
+
+We define it recursively
+We get a random value and a new generator from the current generator,
+and then make a list that has the value as its head and random numbers
+based on the new random generator as its tail. 
+Because we have to be able to potentially generate an infinite amount of numbers,
+we can't give the new random generator back
+
+We could make a function that generates a finite stream of numbers and a new generator like this:
+
+finiteRandoms :: (RandomGen g, Random a, Num n) => n -> g -> ([a], g)
+finiteRandoms 0 gen = ([], gen)
+finiteRandoms n gen = 
+    let (value, newGen) = random gen
+        (restOfList, finalGen) = finiteRandoms (n-1) newGen
+    in (value:restOfList, finalGen)
+
+Again, a recursive definition
+We say that if we want 0 numbers, we just return an empty list and the generator that was given to us
+For any other number of random values, we first get one random number and a new generator
+That will be the head. 
+Then we say the tail will be n-1 numbers generated with the new generator. 
+Then we return the head and the rest of the list joined, and the final generator
+we got from getting the n-1 random numbers. 
+
+What if we want a random value in some sort of range?
+All of the random integers so far were outrageously big or small. 
+What if we want to throw a dice?
+We use randomR for that purpose. 
+It has a type of 
+    randomR :: (RandomGen g, Random a) :: (a, a) -> g -> (a,g)
+meaning that it's kind of like random, only it takes as its first parameter a pair of
+values that set the lower and upper bounds and the final value produced with be within those bounds
+
+randomR (1,6) (mkStdGen 29583)
+returns (6, 1912393 912301)
+
+There's also randomRs, which produces a stream of random values within our defined ranges
+Check this out
+
+take 10 $ randomRs ('a','z') (mkStdGen 3) :: [Char]
+returns "ndkbxngosal"
+
+Great. 
+You might be asking - what does this have to do with I/O?
+We haven't done anything concerning I/O so far. 
+Well, so far we've always made our random generators manually by making it with some
+arbitrary integer.
+The problem is, if we do that in our real program, they will always return the same numbers,
+which doesn't work for us. 
+That's why System.Random offers the getStdGen I/O action, which has a type of
+IO StdGen. 
+When your program starts, it asks the system for a good random number generator and
+stores that in a so-called global generator. getStdGen fetches you that global
+random generator when you bind it to something. 
+
+Here's a simple program that generates a random string. 
+
+import System.Random 
+
+main = do
+    gen <- getStdGen
+    putStr $ take 20 (randomRs ('a','z') gen)
+
+$ runhaskell random_string.hs
+pybphhzzhuepknbykxhe
+$ runhaskell random_string.hs
+eiqgcxykivpudlsvvjpg
+$ runhaskell random_string.hs
+nzdceoconysdgcyqjruo
+$ runhaskell random_string.hs
+bakzhnnuzrkgvesqplrx
+
+Be careful though, because just performing getStdGen twice will ask the system
+for the same global generator twice. 
+If you do this:
+
+import System.Random
+
+main = do
+    gen <- getStdGen
+    putStrLn $ take 20 (randomRs ('a','z') gen)
+    gen2 <- getStdGen
+    putStr $ take 20 (randomRs ('a','z') gen2)
+
+You will get the same string printed out twice!
+One way to get two different strings of length 20 is to set up an infinite stream,
+take the first 20 characters and print them in one line,
+and then take the second set of 20 characters and print them out in a second line. 
+For this, we can use the splitAt function from Data.List, which splits a list at some index
+and returns a tuple that has the first part as the first component and the second
+part as the second component. 
+
+import System.Random 
+import Data.List 
+
+main = do
+    gen <- getStdGen
+    let randomChars = randomRs ('a','z') gen
+        (first20, rest) = splitAt 20 randomChars
+        (second20, _) = splitAt 20 rest
+    putStrLn first20
+    putStrLn second20
+
+Another way is to use the newStdGen action, which splits our current random generator
+into two generators. 
+It updates the global random generator with one of them, and encapsulates the other
+as its result. 
+
+import System.Random 
+
+main = do
+    gen <- getStdGen
+    putStrLn $ take 20 (randomRs ('a','z') gen)
+    gen' <- newStdGen
+    putStr $ take 20 (randomRs ('a','z') gen')
+
+Not only do we get a new random generator when we bind newStdGen to something,
+the global one gets updated as well, so if we do getStdGen again and bind it to something,
+we'll get a generator that's not the same as 'gen'
+
+Here's a little program that will make the user guess what number it's thinking of:
+
+import System.Random 
+import Control.Monad (when)
+
+main = do
+    gen <- getStdGen
+    askForNumber gen
+
+askForNumber :: StdGen -> IO ()
+askForNumber gen = do
+    let (randNumber, newGen) = randomR (1,10) gen :: (Int, StdGen)
+    putStr "Which number in the range from 1 to 10 am I thinking of? "
+    numberString <- getLine
+    when (not $ null numberString) $ do
+        let number = read numberString
+        if randNumber == number
+            then putStrLn "Correct!"
+            else putStrLn $ "Sorry, it was " ++ show randNumber
+        askForNumber newGen
+
+We make a function askForNumber, which takes a random number generator and returns an I/O
+action which will prompt the user for a number, and tell them if they guessed it right. 
+In that function, we first generate a random number and a new generator, based on the generator
+that we got as a parameter. We call them randNumber and newGen. 
+Let's say that the number generated was 7. 
+Then we tell the user to guess which number we're thinking of. 
+We perform getLine and bind its result to numberString. 
+When the user enters 7, numberString becomes "7"
+Next, we use 'when' to check if the string the user entered is an empty string. 
+If it is, an empty I/O action of return () is performed, which effectively ends the program
+if it isn't, an action consisting of the following 'do' block is performed. 
+We used read on numberString to convert it a number, so 'number' is now 7. 
+
+If the user gives some input here we can't do read on, like "haha", our program will crash. 
+If we didn't want it to crash, use 'reads', which returns an empty list when it fails
+to read a string. 
+When it succeeds, it returns a singleton list with a tuple that has our desired value as
+one component, and a string with what it didn't consume as the other. 
+
+We check if the number that we entered is equal to the one generated randomly, 
+and give the user the appropriate message
+Then we call askForNumber recursively, only this time with the new generator that we got,
+which gives us an I/O action thats just like the one we performed, only it depends on
+a different generator. We perform that I/O action. 
+
+main consists of just getting a random generator from the system, and calling askForNumber
+with it to get the initial action. 
+
+Here's the program running:
+
+$ runhaskell guess_the_number.hs
+Which number in the range from 1 to 10 am I thinking of? 4
+Sorry, it was 3
+Which number in the range from 1 to 10 am I thinking of? 10
+You are correct!
+Which number in the range from 1 to 10 am I thinking of? 2
+Sorry, it was 4
+Which number in the range from 1 to 10 am I thinking of? 5
+Sorry, it was 10
+Which number in the range from 1 to 10 am I thinking of?
+
+Another way to make the same program is like this:
+
+import System.Random 
+import Control.Monad (when)
+
+main = do
+    gen <- getStdGen
+    let (randNumber, _) = randomR (1,10) gen :: (Int, StdGen)
+    putStr "Which number in the range from 1 to 10 am I thinking of? "
+    numberString <- getLine
+    when (not $ null numberString) $ do
+        let number = read numberString
+        if randNumber == read numberString
+            then putStrLn "Correct"
+            else putStrLn $ "Sorry, it was " ++ show randNumber
+        newStdGen
+        main
+
+It's very similar to the previous version, only instead of making a function that
+takes a generator and then calls itself recursively with the new generator, we do
+all the work in main. 
+After telling the user whether their guess was correct or not, we update the global
+generator and then call main again. 
+Both approaches are valid, but the first one does less stuff in main and provides us
+with a function we can reuse more easily, so it's maybe a bit nicer. 
+
+### BYTESTRINGS ###
+
+Lists are a very useful data structure.
+So far, we've used them pretty much everywhere. 
+There are a multitude of functions that operate on them, and Haskell's laziness
+allows us to exchange the for and while loops of other languages for filtering
+and mapping over lists, because evaluation will only happen once it really needs to,
+so things like infinite lists are no problem. 
+That's why lists can also be used to represent streams, either when reading from the 
+standard input or when reading from files. 
+We can just open a file and read it as a string, even though it will only be accessed
+when the need arises. 
+
+However, processing files as strings has one drawback: it tends to be slow. 
+As you know, String is a type synonym for [Char]
+Chars don't have a fixed size, because it takes several bytes to represent a character
+from, say, Unicode. 
+Furthermore, lists are really lazy. 
+If you have a list like [1,2,3,4], it will be evaluated only when completely necessary. 
+So the whole list is sort of a promise of a list. 
+Remember that [1,2,3,4] is syntactic sugar for 1:2:3:4:[]
+When the first element of the list is forcibly evaluated (say, by printing it)
+the rest of the list 2:3:4:[] is still just a promise of a list, and so on. 
+So you can think of lists as promises that the next element will be delivered once it really
+has to, and along with it, the promise of the next element after it. 
+It doesn't take a big mental leap to conclude that processing a simple list of numbers
+as a series of promises might not be the most efficient thing in the world. 
+
+That overhead doesn't bother us too much most of the time,
+but it turns out to be a liability when reading big files and manipulating them. 
+That's why Haskell has bytestrings. 
+Bytestrings are sort of like lists, only each element is one byte (8 bits) in size
+The way they handle laziness is also different
+
+Bytestrings come in two flavours: strict and lazy ones. 
+Strict bytestrings reside in Data.ByteString and they do away with laziness completely. 
+There are no promises involved, a strict bytestring represents a series of bytes in an array
+You can't have things like infinite strict bytestrings. 
+If you evaluate the first byte of a strict bytestring, you have to evaluate the whole thing. 
+The upside is that there's less overhead, because there are no thunks
+(the technical term for promises) involved. 
+Tjhe downside is that they're likely to fill your memory up faster because they're read
+into memory all at once. 
+
+The other variety of bytestrings reside in Data.ByteString.Lazy 
+They're lazy, but not quite as lazy as lists. 
+Like we said before, there are as many thunks in a list as there are elements
+That's what makes them kind of slow for some purposes
+Lazy bytestrings take a different approach - they are stored in chunks. 
+Each chunk has a size of 64K. 
+So if you evaluate a byte in a lazy bytestring (by printing it or something),
+the first 64K will be evaluated. After that, it's just a promise for the rest of the chunks. 
+Lazy bytestrings are kind of like lists of strict bytestrings with a size of 64K. 
+When you process a file with lazy bytestrings, it will be read chunk by chunk. 
+This is cool because it won't cause memory usage to skyrocket, and
+the 64K probably fits neatly into your CPU's L2 cache. 
+
+If you look at the documentation for Data.ByteString.Lazy 
+(https://hackage.haskell.org/package/bytestring-0.12.1.0/docs/Data-ByteString-Lazy.html)
+you'll see it has a lot of functions that have the same names as the ones from Data.List, 
+only the type signatures have ByteString instead of [a] and Word8 instead of 'a' in them. 
+The functions with the same names mostly act the same as the ones that work on lists. 
+Because the names are the same, we're going to do a qualified import in a script
+and then load that script into GHCI to play with bytestrings. 
+
+import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString as S
+
+B has lazy bytestrings and functions, whereas S has strict ones. 
+We'll mostly be using the lazy version. 
+
+The function 'pack' has the type signature
+    pack :: [Word8] -> ByteString
+What that means is that it takes a list of bytes of type Word8, and returns a ByteString. 
+You can think of it as taking a list, which is lazy, and making it less lazy,
+so that it's only lazy at 64K intervals. 
+
+what's the deal with that Word8 type?
+well, it's like Int, only it has a much smaller range, namely 0-255. 
+It represents an 8-bit number. 
+And just like Int, it's in the Num typeclass. 
+For instance, we know that the value 5 is polymorphic in that it can act like any numeral type. 
+Well, it can also take the type of Word8. 
+
+B.pack [99,97,110]
+returns Chunk "can" Empty
+
+B.pack [98..120]
+returns Chunk "bcdefghijklmnopqrstuvwx" Empty
+
+As you can see, you usually don't have to worry about the Word8 too much, because the type
+system can makes the numbers choose that type. 
+If you tru to use a big number, like 336, as a Word8, it will just wrap around to 80. 
+
+We packed only a handful of values into a ByteString, so they fit inside one chunk. 
+The Empty is like [] for lists. 
+
+'unpack' is the inverse function of 'pack'. 
+It takes a bytestring and turns it into a list of bytes. 
+
+'fromChunks' takes a list of strict bytestrings and converts it to a lazy bytestring. 
+toChunks takes a lazy bytestring and converts it to a list of strict ones. 
+
+ghci> B.fromChunks [S.pack [40,41,42], S.pack [43,44,45], S.pack [46,47,48]]
+Chunk "()*" (Chunk "+,-" (Chunk "./0" Empty))
+
+This is good if you have a lot of small strict bytestrings and you want to process them
+efficiently without joining them into one big strict bytestring in memory first. 
+
+The bytestring version of : is called 'cons'. 
+It takes a byte and a bytestring, and puts the byte at the beginning. 
+It's lazy though, so it will make a new chunk even if the first chunk in the bytestring
+isn't full. 
+That's why its better to use the strict version of cons, cons', if you're going to be 
+inserting a lot of bytes at the beginning of a bytestring. 
+
+ghci> B.cons 85 $ B.pack [80,81,82,84]
+Chunk "U" (Chunk "PQRT" Empty)
+ghci> B.cons' 85 $ B.pack [80,81,82,84]
+Chunk "UPQRT" Empty
+ghci> foldr B.cons B.empty [50..60]
+Chunk "2" (Chunk "3" (Chunk "4" (Chunk "5" (Chunk "6" (Chunk "7" (Chunk "8" (Chunk "9" (Chunk ":" (Chunk ";" (Chunk "<"
+Empty))))))))))
+ghci> foldr B.cons' B.empty [50..60]
+Chunk "23456789:;<" Empty
+
+As you can see, 'empty' makes an empty bytestring. 
+See the difference between cons and cons' ?
+With the foldr, we started with an empty bytestring and then went over the list of numbers
+from the right, adding each number to the beginning of the bytestring.
+When we used cons, we ended up with one chunk for every byte, which kind of defeats the point. 
+
+Otherwise, the bytestring modules have a load of functions that are analogous
+to those in Data.List, including but not limited to
+head, tail, init, null, length, map, reverse, foldl, foldr, concat, takeWhile, filter, ...
+
+It also has functions that have the same name and behave the same as some functions
+in System.IO, only Strings are replaced with ByteStrings. 
+For instance, the readFile function in System.IO has a type of
+    readFile :: FilePath -> IO String
+while the readFile function from the bytestring modules has a type of
+    readFile :: FilePath -> IO ByteString
+Watch out - if you're using strict bytestrings and you attempt to read a file,
+it will read into memory at once!
+With lazy bytestrings, it will read it into neat chunks. 
+
+Let's make a simple program that takes two filenames as command line arguments
+and copies the first file into the second file. 
+Note that System.Directory already has a function called copyFile, but we're
+going to implement our own file copying function and program anyway. 
+
+import System.Environment
+import qualified Data.ByteString.Lazy as B
+
+main = do
+    (fileName1:fileName2:_) <- getArgs
+    copyFile fileName1 fileName2
+
+copyFile :: FilePath -> FilePath -> IO ()
+copyFile source dest = do
+    contents <- B.readFile source
+    B.writeFile dest contents
+
+We make our own function that takes two FilePaths 
+(remember, FilePath is just a synonym for String)
+and returns an I/O action that will copy one file into another by using bytestring. 
+In the main function, we just get the arguments and call our function with them
+to get the I/O action, which is then performed. 
+
+$ runhaskell bytestringcopy.hs something.txt ../../something.txt
+
+Notice that a program that doesn't use bytestrings could look just like this,
+the only difference is that we used B.readFile and B.writeFile instead of readFile and writeFile
+Many times, you can convert a program that uses normal strings 
+into a program that uses bytestrings by just doing the necessary imports
+and then putting the qualified module names in front of some functions. 
+Sometimes, you have to convert functions that you wrote to work on strings
+so that they work on bytestrings, but that's not hard.
+
+Whenever you need better performance in a program that reads a lot of data into strings, 
+give bytestrings a try - chances are you'll get some good performane boosts with very
+little effort on your part. 
+
+### EXCEPTIONS ###
+
+All languages have functions or pieces of code that might fail in some way. 
+Different languages have different ways of handling that failure. 
+In C, we usually use some abnormal return value (like -1 or a null pointer) to indicate
+that what a function returned shouldn't be treated like a normal value. 
+Java and C#, on the other hand, tend to use exceptions to handle failure. 
+When an exception is thrown, the control flow jumps to some code that we've defined
+that does some cleanup and then maybe re-throws the exception so that some other
+error handling code can take care of some other stuff. 
+
+Haskell has a very good type system. 
+Algebraic data types allow for types like Maybe and Either, and we can use values
+of those types to represent results that may be there or not. 
+In C returning, say, -1 on failure is completely a manner of convention. 
+It only has a special meaning to humans. 
+If we're not careful, we might treat these abnormal values as ordinary ones
+and then they can cause havoc and dismay in our code. 
+Haskell's type system gives us some much-needed safety in that aspect. 
+A function 'a -> Maybe b' clearly indicates that it may produce a 'b' wrapped in 'Just',
+or it may return 'Nothing'. 
+The type is different from just plain 'a -> b' and if we try to use those two
+functions interchangably, the compiler will complain at us. 
+
+Despite having expressive types that support failed computations,
+Haskell still has support for exceptions, because they make more sense in I/O contexts. 
+A lot of things can go wrong when dealing with the outside world because it is so unreliable. 
+For instance, when opening a file, a bunch of things can go wrong. 
+The file might be locked, it might not be there at all, or the hard drive can go wrong, ...
+It's good to be able to jump to some error handling part of our code when such an error occurs
+
+Okay, so I/O code (i.e. impure code) can throw exceptions. 
+It makes sense. 
+But what about pure code?
+Well, it can throw exceptions too. 
+Think about the div and head functions. 
+They have types of
+    (Integral a) => a -> a -> a and [a] -> a, respectively
+No Maybe or Either in their return type, and yet they can both fail!
+div explodes in your face if you try to divide by 0,
+and head throws a tantrum when you give it an empty list
+
+ghci> 4 `div` 0
+*** Exception: divide by zero
+ghci> head []
+*** Exception: Prelude.head: empty list
+
+Pure code can throw exceptions, but they can only be caught in the I/O part of our code
+(when we're inside a do block that goes into main)
+That's because you don't know when (or if) anything will be evaluated in pure code,
+because it is lazy and doesn't have a well-defined order of execution, 
+whereas I/O code does. 
+
+Earlier, we talked about how we should spend as little time as possible in the I/O
+part of our program. The logic of our program should reside mostly within
+our pure functions, because their results are dependant only on the parameters that the
+functions are called with. 
+When dealing with pure functions, you only have to think about what a function
+returns, because it can't do anything else. 
+Even though doing some logic in I/O is necessary (like opening files)
+it should preferably be kept to a minimum. 
+Pure functions are lazy by default, which means we don't know how they will be
+evaluated and that it really shouldn't matter. 
+However, once pure functions start throwing exceptions, it matters when they are evaluated. 
+That's why we can only catch exceptions thrown from pure functions in the I/O part of our code. 
+And that's bad, because we want to keep the I/O part as small as possible. 
+However, if we don't catch them in the I/O part of our code, our program crashes.
+The solution?
+Don't mix exceptions and pure code. 
+Take advantage of Haskell's powerful type sysytem and use types like Either and Maybe
+to represent results that may have failed. 
+
+That's why we'll just be looking at how to use I/O exceptions for now. 
+I/O exceptions are exceptions that are caused when something goes wrong 
+while we are communicating with the outside world in an I/O action that's part of main. 
+For example, we can try opening a file and then it turns out that the file
+has been deleted or something. 
+Take a look at this program that opens a file whose name is given to it as a command
+line argument and tells us how many lines the file has:
+
+import System.Environment
+import System.IO
+
+main = do (fileName:_) <- getArgs
+          contents <- readFile fileName
+          putStrLn $ "The file has " ++ show (length (lines contents)) ++ " lines"
+
+Very simple. 
+We perform the getArgs I/O action and bind the first string in the list it yields to fileName
+Then we call the contents of the file with that name 'contents'. 
+Lastly, we apply 'lines' to those contents to get a list of lines, and then we get the
+length of that list and give it to 'show' to get a string representation of that number. 
+It works as expected, but what happens when we give it the name of a file that doesn't exist?
+
+$ runhaskell linecount.hs i_dont_exist.txt
+linecount.hs: i_dont_exist.txt: openFile: does not exist (No such file or directory)
+
+We get an error from the GHC, telling us that the file does not exist. 
+Our program crashes. 
+What if we wanted to print out a nicer message if the file doesn't exist?
+One way to do that is to check if the file exists before trying to open it,
+by using the doesFileExist function from System.Directory: 
+
+import System.Environment
+import System.IO
+import System.Directory
+
+main = do (fileName:_) <- getArgs
+          fileExists <- doesFileExist fileName
+          if fileExists
+              then do contents <- readFile fileName
+                      putStrLn $ "The file has " ++ show (length (lines contents)) ++ " lines!"
+              else do putStrLn "The file doesn't exist!"
+
+We did fileExists <- doesFileExist filename because doesFileExist has a type of
+    doesFileExist :: FilePath -> IO Bool
+which means that it just returns an I/O action that has as its result a boolean value
+which tells us if the file exists or not. 
+We can't just use doesFileExist in an if statement directly. 
+
+Another solution here would be to use exceptions. 
+It's perfectly acceptable to use them in this context. 
+A file not existing is an exception that arises from I/O, so catching it in I/O is fine. 
+
+To deal with this using exceptions, we're going to take advantage of the catch function
+from System.IO.Error 
+It's type is
+    catch :: IO a -> (IOError -> IO a) -> IO a
+It takes two parameters. 
+The first one is an I/O action. For instance, it could be an I/O action that tries to
+open a file. 
+The second one is the so-called handler. If the first I/O action passed to 'catch'
+throws an I/O exception, that exception gets passed to the handler, which then decides
+what to do. 
+So the final result is an I/O action that will either act the same as the first parameter,
+or it will do what the handler tells it to if the first I/O action throws an exception. 
+
+If you're familiar with try-catch blocks in Java / Python, the catch function is similar. 
+The first parameter is the thing to try, kind of like the stuff in the 'try' block
+in imperative languages. 
+The second parameter is the handler that takes an exception, just like most 'catch'
+blocks take exceptions that you can then examine to see what happened. 
+The handler is invoked if an exception is thrown. 
+
+The hander takes a value of type IOError, which is a value that signifies that an
+I/O exception has occurred. 
+It also carries information regarding the type of exception that was thrown. 
+How this type is implemented depends on the implementation of the language itself,
+which means that we can't inspect values of the type IOError by pattern matching
+against them, just like we can't pattern match against values of type IO Something
+Instead we can use a bunch of useful predicates to find out stuff about values of type IOError
+
+Let's put catch to use:
+
+import System.Environment
+import System.IO
+import System.IO.Error 
+
+main = toTry `catch` handler
+
+toTry :: IO ()
+toTry = do (fileName:_) <- getArgs
+           contents <- readFile fileName
+           putStrLn $ "The file has " ++ show (length (lines contents)) ++ " lines"
+
+handler :: IOError -> IO ()
+handler e = putStrLn "Whoops, had some trouble"
+
+First of all, you'll see that we put backticks around catch so that we can use it
+as an infix function, because it takes two parameters. 
+Using it as an infix function makes it more readable. 
+So toTry `catch` handler is the same as catch toTry handler, which fits well with its type. 
+toTry is the I/O action that we try to carry out, and handler is the function
+that takes an IOError and returns an action to be carried out in case of an exception. 
+
+Let's give it a go:
+
+$ runhaskell count_lines.hs i_exist.txt
+The file has 3 lines!
+
+$ runhaskell count_lines.hs i_dont_exist.txt
+Whoops, had some trouble!
+
+In the handler, we didn't check to see what kind of IOError we got. 
+We just say "Whoops" for any kind of error
+Just catching all types of exceptions in one handler is bad practice in Haskell
+just like it is in most other languages. 
+What if some other exception happens that we don't want to catch, like us interrupting
+the program or something?
+That's why we're going to do the same thing that's usually done in other languages
+as well - we'll check to see what type of exception we got. 
+If it's the kind of exception we're waiting to catch, we do our stuff. 
+If it's not, we throw that exception back into the wild. 
+Let's modify our program to catch only the exceptions caused by a file not existing:
+
+import System.Environment
+import System.IO
+import System.IO.Error
+
+main = toTry `catch` handler
+            
+toTry :: IO ()
+toTry = do (fileName:_) <- getArgs
+           contents <- readFile fileName
+           putStrLn $ "The file has " ++ show (length (lines contents)) ++ " lines!"
+
+handler :: IOError -> IO ()
+handler e
+    | isDoesNotExistError e = putStrLn "The file doesn't exist!"
+    | otherwise = ioError e
+
+Everything stays the same except the handler, which we modified to only catch a certain
+group of I/O exceptions. Here we used two new functions from System.IO.Error: 
+isDoesNotExistError and ioError. 
+isDoesNotExistError is a predicate over IOErrors, which means that it's a function
+that takes an IOError and returns a True or False, meaning it has a type of
+    isDoesNotExistError :: IOError -> Bool
+We use it on the exception that gets passed to our handler, to see if it's an error
+cause by a file not existing. 
+We use guard syntax here, but we could have used an if else. 
+If it's not caused by a file not existing, we re-throw the exception that was
+passed by the handler with the ioError function. 
+It has a type of
+    ioError :: IOException -> IO a
+It takes an IOError and produces an I/O action that will throw it. 
+The I/O action has a type of IO a,
+because it never actually yields a result, so it can act as 'IO anything'
+
+So if the exception thrown in the toTry I/O action that we glued together with a do block
+isn't caused by a file not existing, toTry `catch` handler will catch that and then 
+re-throw it. 
+
+There are several predicates that act on IOError, 
+and if a guard doesn't evalute to True, evaluation falls through to the next guard. 
+The predicates that act on IOError are:
+
+-isAlreadyExistsError
+-isDoesNotExistError
+-isAlreadyInUseError
+-isFullError
+-isEOFError
+-isIllegalOperation
+-isPermissionError
+-isUserError
+
+Most of these are pretty self-explanatory. 
+isUserError evaluates to True when we use the function userError to make the exception,
+which is used for making exceptions from our code and equipping them with a string. 
+For instance, you can do 
+    ioError $ userError "remote computer unplugged!"
+Although, it's preferred you use types like Either and Maybe to express
+possible failure instead of throwing exceptions yourself with userError. 
+
+So you could have a handler that looks something like this:
+
+handler :: IOError -> IO ()
+handler e
+    | isDoesNotExistError e = putStrLn "The file doesn't exist"
+    | isFullError e = freeSomeSpace
+    | isIllegalOperation e = notifyPolice
+    | otherwise = ioError e
+
+Where 'freeSomeSpace' and 'notifyPolice' are some I/O actions that you define. 
+Be sure to re-throw exceptions if they don't match any of your criteria, 
+otherwise you're causing your program to fail silently in some cases where it shouldn't. 
+
+System.IO.Error also exports functions that enable us to ask our exceptions for some attributes,
+like what the handle of the file that caused the error is, or what the filename is. 
+These start with 'ioe' and you can see a full list of them in the documentation
+(https://downloads.haskell.org/~ghc/6.10.1/docs/html/libraries/base/System-IO-Error.html#3)
+
+Say we want to print the filename that caused our error. 
+We can't print the fileName that we got from getArgs, because only the IOError is passed to
+the handler and the handler doesn't know about anything else. 
+A function depends only on the parameters it was called with. 
+That's why we can use the ioeGetFileName function, which has a type of
+    ioeGetFileName :: IOError -> Maybe FilePath
+It takes an IOError as a parameter and maybe returns a FilePath (a String!)
+Basically, it just extracts the file path from the IOError if it can. 
+Let's modify our program to print out the file path that's responsible for the exception:
+
+import System.Environment 
+import System.IO 
+import System.IO.Error 
+
+main = toTry `catch` handler
+
+toTry :: IO ()
+toTry = do (fileName:_) <- getArgs
+           contents <- readFile fileName
+           putStrLn $ "The file has " ++ show (length (lines contents)) ++ " lines"
+
+handler :: IOError -> IO ()
+handler e
+    | isDoesNotExistError e =
+        case ioeGetFileName e of Just Path -> putStrLn $ "Whoops! File does not exist at " ++ path
+                                 Nothing -> putStrLn "Whoops! File does not exist at an unknown location"
+    | otherwise = ioError e
+
+In the guard where isDoesNotExistError is True, we used a case expression to call
+ioeGetFileName with e and then pattern match against the Maybe value that it returned. 
+Using case expressions is commonly used when you want to pattern match against something
+without bringing in a new function. 
+
+You don't have to use one handler to catch expressions in your whole I.O part. 
+You can cover certain parts of your I/O code with catch, 
+or you can cover several of them with catch and use different handlers for them, like so:
+
+main = do toTry `catch` handler1
+          thenTryThis `catch` handler2
+          launchRockets
+
+Here, toTry uses handler1 as the handler, and then thenTryThis uses handler2. 
+launchRockets isn't a parameter to catch, so whatever exceptions it might throw
+will likely crash our program, unless launchRockets uses catch internally to handle
+its own exceptions. 
+Of course toTry, thenTryThis and launchRockets are I/O actions that have been glued together
+using do syntax and hypothetically defined somewhere else. 
+This is kind of similar to try-catch blocks in other languages, where you can surround
+your whole program in one big try-catch, or you can use a more fine grained approach
+and use different ones in different parts of your code to control what kind of error
+handling happens where. 
+
+Now we know how to deal with I/O exceptions. 
+Throwing exceptions from pure code and dealing with them hasn't been covered, because
+Haskell offers much better ways to indicate errors than reverting to I/O to catch them. 
+Even when gluing together I/O actions that might fail, it's better to have their type
+be something like IO (Either a b), meaning that they're normal I/O actions
+but the result that they yield when performed is of type Either a b, meaning it's either
+Left a or Right b. 
 
 -}
